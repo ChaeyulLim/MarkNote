@@ -1,0 +1,92 @@
+{# AI 도우미 채팅 패널 — 서버의 Claude Code CLI 와 연결 (docs/claude-integration.md)
+   오른쪽 서랍: 손잡이(chat-rail)를 누르거나 F2 를 누르면 오른쪽에서 밀려 나온다 #}
+{% from "_icons.html" import icon %}
+<div class="chat-drawer no-anim" id="chat-drawer">
+<button type="button" class="chat-rail" data-chat-toggle aria-pressed="false" aria-controls="chat-panel" title="AI 도우미 열기/닫기 (F2)">
+  {{ icon('sparkles') }}<span class="chat-rail-label">AI 도우미</span><kbd>F2</kbd><span class="chat-rail-arrow">{{ icon('chevron-left') }}</span>
+</button>
+<aside class="chat-panel" id="chat-panel" aria-label="AI 도우미"
+       data-page-id="{{ page.id if page is defined else '' }}"
+       data-deck-id="{{ deck.id if deck is defined else '' }}">
+  <div class="chat-resize" title="드래그해서 너비 조절"></div>
+
+  <header class="chat-head">
+    <div class="chat-title">
+      <span class="chat-title-text">{{ icon('sparkles', 'accent') }}<span>AI 도우미</span></span>
+      <button type="button" class="chat-status" title="클릭해서 연결 상태 다시 확인">
+        <span class="chat-status-dot"></span><span class="chat-status-text">확인 중…</span>
+      </button>
+    </div>
+    <div class="chat-head-actions">
+      <button type="button" class="chat-icon-btn" data-chat-history title="이전 대화 (/resume)">{{ icon('message') }}<span>기록</span></button>
+      <button type="button" class="chat-icon-btn" data-chat-new title="새 대화">{{ icon('message-plus') }}<span>새 대화</span></button>
+      <button type="button" class="chat-icon-btn" data-chat-close title="닫기" aria-label="닫기">{{ icon('x') }}</button>
+    </div>
+  </header>
+
+  <div class="chat-body">
+    <div class="chat-empty">
+      <div class="chat-empty-icon">{{ icon('sparkles') }}</div>
+      <p class="chat-empty-title">무엇을 도와드릴까요?</p>
+      <p class="muted">
+        {% if page is defined %}현재 페이지 내용을 바탕으로 답합니다.
+        {% else %}페이지를 열면 그 내용을 바탕으로 대화할 수 있어요.{% endif %}
+      </p>
+      <div class="chat-setup" hidden>
+        <p class="chat-setup-message"></p>
+        <ol>
+          <li>설치 (서버 컴퓨터): <code>irm https://claude.ai/install.ps1 | iex</code> (Windows) 또는 <code>curl -fsSL https://claude.ai/install.sh | bash</code></li>
+          <li>로그인: 서버와 같은 컴퓨터에서 접속 중이면 아래 입력창에 <code>/login</code>. 원격이면 서버 터미널에서 <code>claude</code> 실행 후 로그인</li>
+          <li>상태 배지를 눌러 다시 확인</li>
+        </ol>
+      </div>
+      <div class="chat-suggestions">
+        <button type="button" data-prompt="이 페이지를 3줄로 요약해줘">{{ icon('align-left') }}<span>페이지 요약</span></button>
+        <button type="button" data-prompt="이 페이지에서 할 일만 체크리스트로 뽑아줘">{{ icon('list-check') }}<span>할 일 추출</span></button>
+        <button type="button" data-prompt="문장을 더 자연스럽게 다듬어줘">{{ icon('wand') }}<span>문장 다듬기</span></button>
+        <button type="button" data-prompt="이 내용을 영어로 번역해줘">{{ icon('globe') }}<span>영어로 번역</span></button>
+      </div>
+    </div>
+    <div class="chat-messages" aria-live="polite"></div>
+  </div>
+
+  <footer class="chat-composer">
+    <div class="chat-context">
+      {% if page is defined %}
+      <button type="button" class="ctx-chip" data-ctx="page" aria-pressed="true" title="{{ '이 폴더 안 노트 전부를 참고' if page.kind == 'folder' else '이 노트 내용을 참고' }}">
+        {{ icon('folder' if page.kind == 'folder' else 'file') }}<span data-title-for="{{ page.id }}">{{ page.display_title }}</span>
+      </button>
+      {% elif deck is defined %}
+      <button type="button" class="ctx-chip" data-ctx="deck" aria-pressed="true" title="이 프레젠테이션 내용을 참고 (모든 슬라이드 글 + 지금 슬라이드의 개체)">
+        {{ icon('presentation') }}<span>{{ deck.display_title }}</span>
+      </button>
+      {% else %}
+      <span class="muted">참고할 페이지 없음 · 지금 화면만 알려줌</span>
+      {% endif %}
+    </div>
+    {# 이 대화가 다루는 노트 — 채팅에서 이름으로 부르거나 AI 가 읽고 고친 노트. 질문마다 최신 내용을 함께 보냄 #}
+    <div class="chat-focus" hidden></div>
+    {# 노트·슬라이드에서 드래그로 선택한 글자 — "이 부분" 질문에 함께 보냄 (이미지 아님, 글자 그대로) #}
+    <div class="chat-selection" hidden>
+      {{ icon('text-box') }}<span class="chat-selection-text"></span>
+      <button type="button" class="chat-selection-clear" title="선택한 글자 보내지 않기" aria-label="선택 해제">{{ icon('x') }}</button>
+    </div>
+    <div class="chat-commands" role="listbox" aria-label="명령어" hidden></div>
+    <div class="chat-input-row">
+      <textarea class="chat-input" rows="1" placeholder="메시지 입력…  (Enter 전송 · / 명령어)"></textarea>
+      <button type="button" class="chat-send" disabled title="보내기" aria-label="보내기">{{ icon('arrow-up') }}</button>
+    </div>
+    {# 사용 중인 모델 · 노력 수준 · 사용량 고리 (Claude Code 출력에서 얻음) #}
+    <div class="chat-meta">
+      <span class="chat-foot" title="노트·슬라이드 수정은 AI 가 바로 반영 → [되돌리기] 또는 [확정]">Claude 구독 사용</span>
+      <button type="button" class="chat-model" title="모델 · 노력 수준 바꾸기">
+        <span class="chat-model-name">기본 모델</span><span class="chat-effort"></span>
+      </button>
+      <button type="button" class="chat-usage" aria-label="사용량 보기" aria-expanded="false"><span class="chat-usage-pct"></span>
+        <svg viewBox="0 0 20 20" aria-hidden="true"><circle class="ring-track" cx="10" cy="10" r="7.5"/><circle class="ring-value" cx="10" cy="10" r="7.5"/></svg>
+      </button>
+    </div>
+    <div class="chat-usage-pop" hidden></div>
+  </footer>
+</aside>
+</div>

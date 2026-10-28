@@ -1,0 +1,202 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon, logo %}
+{% block title %}{{ deck.display_title }} · MarkNote{% endblock %}
+{% block body %}
+{% set readonly = deck.status == 'trashed' %}
+<div class="pp-app{% if readonly %} pp-readonly{% endif %}" id="pp-app">
+  <header class="pp-titlebar">
+    <a class="pp-back" href="{{ url_for('decks.list_decks') }}" title="프레젠테이션 목록">{{ icon('chevron-left') }}{{ logo() }}</a>
+    <input id="pp-title" class="pp-title" value="{{ deck.title }}" placeholder="제목 없는 프레젠테이션" maxlength="200" autocomplete="off" {% if readonly %}readonly{% endif %}>
+    <span id="pp-save" class="pp-save" data-state="saved">저장됨</span>
+    <span class="pp-spacer"></span>
+    <button type="button" class="pp-show-btn" data-chat-toggle aria-pressed="false" title="AI 도우미 (F2)">{{ icon('sparkles') }}<span>AI 도우미</span></button>
+    <button type="button" class="pp-show-btn" data-cmd="show-start" title="처음부터 (F5)">{{ icon('play') }}<span>슬라이드 쇼</span></button>
+  </header>
+
+  {% if readonly %}
+  <div class="pp-readonly-bar">{{ icon('trash') }}<span>휴지통에 있는 프레젠테이션입니다. (읽기 전용)</span>
+    <button type="button" class="btn-ghost" data-action="deck-restore" data-id="{{ deck.id }}">{{ icon('undo') }}<span>복원</span></button>
+  </div>
+  {% endif %}
+
+  <nav class="pp-tabs" role="tablist">
+    <button type="button" data-tab="home" class="active">홈</button>
+    <button type="button" data-tab="insert">삽입</button>
+    <button type="button" data-tab="show">슬라이드 쇼</button>
+    <button type="button" data-tab="view">보기</button>
+  </nav>
+
+  <div class="pp-ribbon">
+    <!-- 홈 -->
+    <div class="pp-panel" data-panel="home">
+      <div class="pp-group">
+        <div class="pp-group-body">
+          <div class="pp-split">
+            <button type="button" class="pp-big" data-cmd="new-slide" title="새 슬라이드 (Ctrl+M)">{{ icon('slide-plus') }}<span>새<br>슬라이드</span></button>
+            <button type="button" class="pp-split-arrow" data-cmd="new-slide-menu" aria-label="레이아웃 선택">▾</button>
+          </div>
+          <div class="pp-stack">
+            <button type="button" data-cmd="layout-menu">{{ icon('layout') }}<span>레이아웃 ▾</span></button>
+            <button type="button" data-cmd="reset-layout">{{ icon('refresh') }}<span>다시 설정</span></button>
+            <button type="button" data-cmd="delete-slide">{{ icon('trash') }}<span>삭제</span></button>
+          </div>
+        </div>
+        <div class="pp-group-label">슬라이드</div>
+      </div>
+
+      <div class="pp-group">
+        <div class="pp-group-body pp-rows">
+          <div class="pp-row">
+            <select data-cmd="font" title="글꼴" class="pp-font"></select>
+            <select data-cmd="size" title="글꼴 크기" class="pp-size"></select>
+            <button type="button" data-cmd="grow" title="글꼴 크기 크게 (Ctrl+Shift+>)" class="pp-letter">가<sup>+</sup></button>
+            <button type="button" data-cmd="shrink" title="글꼴 크기 작게 (Ctrl+Shift+<)" class="pp-letter">가<sup>−</sup></button>
+          </div>
+          <div class="pp-row">
+            <button type="button" data-cmd="bold" title="굵게 (Ctrl+B)" class="pp-letter"><b>가</b></button>
+            <button type="button" data-cmd="italic" title="기울임꼴 (Ctrl+I)" class="pp-letter"><i>가</i></button>
+            <button type="button" data-cmd="underline" title="밑줄 (Ctrl+U)" class="pp-letter"><u>가</u></button>
+            <button type="button" data-cmd="strike" title="취소선" class="pp-letter"><s>가</s></button>
+            <label class="pp-color" title="글꼴 색"><span class="pp-letter">가</span><i class="pp-swatch" data-swatch="color"></i><input type="color" data-cmd="color"></label>
+          </div>
+        </div>
+        <div class="pp-group-label">글꼴</div>
+      </div>
+
+      <div class="pp-group">
+        <div class="pp-group-body pp-rows">
+          <div class="pp-row">
+            <button type="button" data-cmd="bullets" title="글머리 기호">{{ icon('list-bullets') }}</button>
+          </div>
+          <div class="pp-row">
+            <button type="button" data-cmd="align-left" title="왼쪽 맞춤 (Ctrl+L)">{{ icon('text-left') }}</button>
+            <button type="button" data-cmd="align-center" title="가운데 맞춤 (Ctrl+E)">{{ icon('text-center') }}</button>
+            <button type="button" data-cmd="align-right" title="오른쪽 맞춤 (Ctrl+R)">{{ icon('text-right') }}</button>
+            <button type="button" data-cmd="align-justify" title="양쪽 맞춤 (Ctrl+J)">{{ icon('text-justify') }}</button>
+          </div>
+        </div>
+        <div class="pp-group-label">단락</div>
+      </div>
+
+      <div class="pp-group">
+        <div class="pp-group-body">
+          <button type="button" class="pp-big" data-cmd="shapes-menu" title="도형">{{ icon('shapes') }}<span>도형<br>▾</span></button>
+          <div class="pp-stack">
+            <button type="button" data-cmd="arrange-menu">{{ icon('bring-front') }}<span>정렬 ▾</span></button>
+            <div class="pp-row">
+              <label class="pp-color" title="도형 채우기">{{ icon('fill') }}<i class="pp-swatch" data-swatch="fill"></i><input type="color" data-cmd="fill"></label>
+              <button type="button" class="pp-split-arrow small" data-cmd="fill-menu" aria-label="채우기 옵션">▾</button>
+            </div>
+            <div class="pp-row">
+              <label class="pp-color" title="도형 윤곽선">{{ icon('outline') }}<i class="pp-swatch" data-swatch="line"></i><input type="color" data-cmd="line"></label>
+              <button type="button" class="pp-split-arrow small" data-cmd="line-menu" aria-label="윤곽선 옵션">▾</button>
+            </div>
+          </div>
+        </div>
+        <div class="pp-group-label">그리기</div>
+      </div>
+
+      <div class="pp-group">
+        <div class="pp-group-body">
+          <div class="pp-stack">
+            <button type="button" data-cmd="select-all" title="모두 선택 (Ctrl+A)">{{ icon('select-all') }}<span>모두 선택</span></button>
+          </div>
+        </div>
+        <div class="pp-group-label">편집</div>
+      </div>
+    </div>
+
+    <!-- 삽입 -->
+    <div class="pp-panel" data-panel="insert" hidden>
+      <div class="pp-group">
+        <div class="pp-group-body">
+          <div class="pp-split">
+            <button type="button" class="pp-big" data-cmd="new-slide" title="새 슬라이드 (Ctrl+M)">{{ icon('slide-plus') }}<span>새<br>슬라이드</span></button>
+            <button type="button" class="pp-split-arrow" data-cmd="new-slide-menu" aria-label="레이아웃 선택">▾</button>
+          </div>
+        </div>
+        <div class="pp-group-label">슬라이드</div>
+      </div>
+      <div class="pp-group">
+        <div class="pp-group-body">
+          <button type="button" class="pp-big" data-cmd="insert-picture" title="그림 (붙여넣기·끌어다 놓기도 가능)">{{ icon('image') }}<span>그림</span></button>
+        </div>
+        <div class="pp-group-label">이미지</div>
+      </div>
+      <div class="pp-group">
+        <div class="pp-group-body">
+          <button type="button" class="pp-big" data-cmd="shapes-menu">{{ icon('shapes') }}<span>도형<br>▾</span></button>
+        </div>
+        <div class="pp-group-label">일러스트레이션</div>
+      </div>
+      <div class="pp-group">
+        <div class="pp-group-body">
+          <button type="button" class="pp-big" data-cmd="insert-text" title="텍스트 상자 — 슬라이드를 클릭하거나 끌어서 그리기">{{ icon('text-box') }}<span>텍스트<br>상자</span></button>
+        </div>
+        <div class="pp-group-label">텍스트</div>
+      </div>
+    </div>
+
+    <!-- 슬라이드 쇼 -->
+    <div class="pp-panel" data-panel="show" hidden>
+      <div class="pp-group">
+        <div class="pp-group-body">
+          <button type="button" class="pp-big" data-cmd="show-start" title="처음부터 (F5)">{{ icon('play') }}<span>처음부터</span></button>
+          <button type="button" class="pp-big" data-cmd="show-current" title="현재 슬라이드부터 (Shift+F5)">{{ icon('presentation') }}<span>현재<br>슬라이드부터</span></button>
+        </div>
+        <div class="pp-group-label">슬라이드 쇼 시작</div>
+      </div>
+    </div>
+
+    <!-- 보기 -->
+    <div class="pp-panel" data-panel="view" hidden>
+      <div class="pp-group">
+        <div class="pp-group-body">
+          <button type="button" class="pp-big active" title="기본">{{ icon('layout') }}<span>기본</span></button>
+        </div>
+        <div class="pp-group-label">프레젠테이션 보기</div>
+      </div>
+      <div class="pp-group">
+        <div class="pp-group-body">
+          <button type="button" class="pp-big" data-cmd="zoom-fit">{{ icon('fit') }}<span>창에<br>맞춤</span></button>
+          <div class="pp-stack">
+            <button type="button" data-cmd="zoom-in">{{ icon('zoom-in') }}<span>확대</span></button>
+            <button type="button" data-cmd="zoom-out">{{ icon('zoom-out') }}<span>축소</span></button>
+          </div>
+        </div>
+        <div class="pp-group-label">확대/축소</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="pp-main">
+    <aside class="pp-thumbs" id="pp-thumbs" tabindex="0" aria-label="슬라이드 목록"></aside>
+    <section class="pp-stage-wrap" id="pp-stage-wrap">
+      <div class="pp-stage" id="pp-stage"></div>
+    </section>
+  </div>
+
+  <footer class="pp-status">
+    <span id="pp-slide-no">슬라이드 1 / 1</span>
+    <span class="pp-status-sep">|</span>
+    <span>한국어</span>
+    <span class="pp-spacer"></span>
+    <button type="button" data-cmd="zoom-out" title="축소">{{ icon('zoom-out') }}</button>
+    <input type="range" id="pp-zoom" min="10" max="300" value="100" aria-label="확대/축소">
+    <button type="button" data-cmd="zoom-in" title="확대">{{ icon('zoom-in') }}</button>
+    <span id="pp-zoom-label" class="pp-zoom-label">100%</span>
+    <button type="button" data-cmd="zoom-fit" title="창에 맞춤">{{ icon('fit') }}</button>
+  </footer>
+
+  <input type="file" id="pp-file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden>
+</div>
+{% include "_chat_panel.html" %}
+<script type="application/json" id="deck-data">{{ data|tojson }}</script>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/deck.css') }}">
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+<script src="{{ url_for('static', filename='js/ui.js') }}"></script>
+<script src="{{ url_for('static', filename='js/deck/render.js') }}"></script>
+<script src="{{ url_for('static', filename='js/deck/show.js') }}"></script>
+<script src="{{ url_for('static', filename='js/deck/editor.js') }}"></script>
+<script src="{{ url_for('static', filename='js/chat.js') }}"></script>
+{% endblock %}

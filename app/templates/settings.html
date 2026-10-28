@@ -1,0 +1,98 @@
+{% extends "layout.html" %}
+{% from "_icons.html" import icon %}
+{% block title %}설정 · MarkNote{% endblock %}
+{% block view %}settings{% endblock %}
+{% block content %}
+<div class="settings-page">
+  <h1 class="heading-with-icon">{{ icon('settings') }}<span>설정</span></h1>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+      <p class="flash flash-{{ category }}">{{ message }}</p>
+    {% endfor %}
+  {% endwith %}
+
+  <form method="post" class="settings-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <section class="settings-section">
+      <h2 class="heading-with-icon">{{ icon('sparkles', 'accent') }}<span>AI 도우미</span></h2>
+
+      <label class="settings-label" for="ai_initial_prompt">초기 프롬프트</label>
+      <p class="muted">모든 대화에 항상 적용할 지침입니다. 말투, 답변 형식, 나에 대한 정보 등을 적어 두세요.</p>
+      <textarea id="ai_initial_prompt" name="ai_initial_prompt" rows="8" maxlength="{{ max_prompt }}"
+                placeholder="예) 항상 존댓말로, 핵심부터 짧게 답해줘. 나는 백엔드 개발자고 파이썬을 주로 써. 요약은 불릿 3개 이내로.">{{ settings.ai_initial_prompt }}</textarea>
+      <p class="settings-counter muted"><span id="prompt-count">{{ settings.ai_initial_prompt|length }}</span> / {{ max_prompt }}자</p>
+
+      <h3 class="settings-label">노트 접근 권한</h3>
+      <label class="settings-check">
+        <input type="checkbox" name="ai_notes_read" value="1" id="ai_notes_read" {% if settings.ai_notes_read %}checked{% endif %}>
+        <span>
+          <strong>노트 읽기</strong>
+          <span class="muted">현재 페이지뿐 아니라 다른 페이지도 검색하고 읽을 수 있습니다. (휴지통 제외)</span>
+        </span>
+      </label>
+      <label class="settings-check">
+        <input type="checkbox" name="ai_notes_edit" value="1" id="ai_notes_edit" {% if settings.ai_notes_edit %}checked{% endif %}>
+        <span>
+          <strong>노트 바로 수정</strong>
+          <span class="muted">"고쳐줘", "새 페이지로 정리해줘" 같은 요청을 <b>바로 반영</b>합니다.
+            바뀐 부분은 페이지에 강조되고, [되돌리기](Ctrl+Z) 또는 [확정](Ctrl+S)을 고릅니다.</span>
+        </span>
+      </label>
+      <label class="settings-check">
+        <input type="checkbox" name="ai_notes_delete" value="1" id="ai_notes_delete" {% if settings.ai_notes_delete %}checked{% endif %}>
+        <span>
+          <strong>노트 삭제 (휴지통으로)</strong>
+          <span class="muted">"이 노트 지워줘" 같은 요청에 노트·폴더를 <b>휴지통으로 옮깁니다</b>. 영구 삭제는 하지 않으며,
+            [되돌리기]를 누르거나 휴지통에서 복원하면 원래 자리로 돌아옵니다.</span>
+        </span>
+      </label>
+      <h3 class="settings-label">프레젠테이션 권한</h3>
+      <label class="settings-check">
+        <input type="checkbox" name="ai_decks_edit" value="1" id="ai_decks_edit" {% if settings.ai_decks_edit %}checked{% endif %}>
+        <span>
+          <strong>프레젠테이션 바로 수정</strong>
+          <span class="muted">"제목 줄여줘", "요약 슬라이드 추가해줘" 같은 요청을 AI 가 <b>직접 슬라이드에 적용</b>합니다.
+            편집기에 바로 보이고, 채팅의 [되돌리기]로 원래대로 돌릴 수 있습니다.</span>
+        </span>
+      </label>
+      <p class="muted settings-note">AI 는 PC 의 다른 파일이나 명령 실행에는 접근할 수 없습니다. 노트·프레젠테이션 내용은 사용할 때 Claude(Anthropic)로 전송됩니다.</p>
+    </section>
+
+    <div class="settings-actions">
+      <button type="submit" class="btn-primary">저장</button>
+    </div>
+  </form>
+
+  <section class="settings-section">
+    <h2 class="heading-with-icon">{{ icon('key') }}<span>로그인</span></h2>
+    <p class="muted settings-note">공용 PC 등에 로그인을 남겨 두었다면 모든 기기(이 기기 포함)의 로그인을 끊습니다. 비밀번호 변경은 서버에서 <code>flask --app run set-login</code>.</p>
+    <form method="post" action="{{ url_for('auth.logout_all') }}" onsubmit="return confirm('모든 기기에서 로그아웃할까요? 이 기기도 다시 로그인해야 합니다.')">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="btn-danger">모든 기기에서 로그아웃</button>
+    </form>
+  </section>
+</div>
+
+<script>
+  (() => {
+    const read = document.getElementById("ai_notes_read");
+    const edit = document.getElementById("ai_notes_edit");
+    const del = document.getElementById("ai_notes_delete");
+    const sync = () => {
+      // 노트 수정·삭제는 읽기가 켜져 있어야 가능
+      [edit, del].forEach((box) => {
+        box.disabled = !read.checked;
+        if (!read.checked) box.checked = false;
+      });
+    };
+    read.addEventListener("change", sync);
+    sync();
+
+    const prompt = document.getElementById("ai_initial_prompt");
+    const count = document.getElementById("prompt-count");
+    prompt.addEventListener("input", () => (count.textContent = prompt.value.length));
+  })();
+</script>
+{% endblock %}

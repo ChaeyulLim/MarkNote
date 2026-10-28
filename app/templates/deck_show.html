@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% block title %}{{ deck.display_title }} · 슬라이드 쇼{% endblock %}
+{% block body %}
+{# 전체 화면은 사용자 동작(클릭·키)이 있어야 시작할 수 있어서 시작 화면을 한 번 보여준다 #}
+<main class="pp-show-start" id="pp-show-start" tabindex="0">
+  <div class="pp-show-start-box">
+    {{ icon('play') }}
+    <h1>{{ deck.display_title }}</h1>
+    <p>클릭하거나 아무 키나 눌러 슬라이드 쇼를 시작하십시오</p>
+    <a href="{{ url_for('decks.editor', deck_id=deck.id) }}" class="pp-show-start-back">편집 화면으로</a>
+  </div>
+</main>
+<script type="application/json" id="deck-data">{{ data|tojson }}</script>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/deck.css') }}">
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+<script src="{{ url_for('static', filename='js/ui.js') }}"></script>
+<script src="{{ url_for('static', filename='js/deck/render.js') }}"></script>
+<script src="{{ url_for('static', filename='js/deck/show.js') }}"></script>
+<script>
+  (() => {
+    const deck = JSON.parse(document.getElementById("deck-data").textContent).deck;
+    const screen = document.getElementById("pp-show-start");
+    let running = false;
+    const begin = (e) => {
+      if (running || e.target.closest("a")) return;
+      running = true;
+      DeckShow.start({
+        slides: deck.slides,
+        startIndex: Number(new URLSearchParams(location.search).get("start") || 0),
+        onExit: (i) => {
+          const slide = deck.slides[i];
+          location.href = `/d/${deck.id}${slide ? `?slide=${slide.id}` : ""}`;
+        },
+      });
+    };
+    screen.addEventListener("click", begin);
+    document.addEventListener("keydown", (e) => !running && !e.ctrlKey && !e.metaKey && begin(e), { once: false });
+    screen.focus();
+  })();
+</script>
+{% endblock %}

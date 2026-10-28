@@ -1,0 +1,7 @@
+{# 파일 위치 — 보이는 글은 notes 폴더 기준("회사/회의록.md", 프로젝트는 "회사/"), 마우스를 올리거나 복사하면 실제 위치 #}
+{% from "_icons.html" import icon %}
+{% set abs_path = abs_file_path(page) %}
+<div class="file-path" data-file-path="{{ page.id }}" data-abs="{{ abs_path }}" title="파일 위치: {{ abs_path }}">
+  {{ icon('folder') }}<code class="file-path-text" data-path-for="{{ page.id }}">{{ file_path(page) }}</code>
+  <button type="button" class="file-path-copy" data-copy-path="{{ page.id }}" title="파일 위치 복사" aria-label="파일 위치 복사">{{ icon('copy') }}</button>
+</div>

@@ -1,0 +1,38 @@
+{% extends "layout.html" %}
+{% from "_icons.html" import icon, page_icon %}
+{% block title %}{{ '휴지통' if kind == 'trash' else '보관함' }} · MarkNote{% endblock %}
+{% block view %}{{ kind }}{% endblock %}
+{% block content %}
+{% set is_trash = kind == 'trash' %}
+<div class="list-page">
+  <div class="list-head">
+    <h1 class="heading-with-icon">{{ icon('trash' if is_trash else 'archive') }}<span>{{ '휴지통' if is_trash else '보관함' }}</span></h1>
+    {% if is_trash and pages %}
+    <button type="button" class="btn-danger" data-action="empty-trash">{{ icon('trash') }}<span>휴지통 비우기</span></button>
+    {% endif %}
+  </div>
+  <p class="muted">
+    {% if is_trash %}복원하거나 영구 삭제할 수 있습니다. 영구 삭제하면 하위 페이지와 이미지도 함께 사라집니다.
+    {% else %}보관한 페이지는 사이드바에서 숨겨집니다. 언제든 복원할 수 있습니다.{% endif %}
+  </p>
+
+  <ul class="page-list">
+    {% for p in pages %}
+    <li>
+      <a href="{{ p.url }}">{{ page_icon(p) }}<span>{{ p.display_title }}</span></a>
+      <span class="muted">{{ (p.trashed_at or p.updated_at).strftime('%Y-%m-%d %H:%M') }}</span>
+      <span class="row-actions">
+        <button type="button" class="btn-ghost" data-action="restore" data-id="{{ p.id }}" data-reload>{{ icon('undo') }}<span>복원</span></button>
+        {% if is_trash %}
+        <button type="button" class="btn-ghost danger" data-action="delete" data-id="{{ p.id }}" data-reload>{{ icon('file-x') }}<span>영구 삭제</span></button>
+        {% else %}
+        <button type="button" class="btn-ghost" data-action="trash" data-id="{{ p.id }}" data-reload>{{ icon('trash') }}<span>휴지통</span></button>
+        {% endif %}
+      </span>
+    </li>
+    {% else %}
+    <li class="muted">비어 있습니다.</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endblock %}

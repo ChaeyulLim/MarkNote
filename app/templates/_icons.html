@@ -1,0 +1,14 @@
+{# 아이콘: {{ icon('file') }} → static/icons.svg 의 #i-file #}
+{% macro icon(name, cls='') -%}
+<svg class="icon{% if cls %} {{ cls }}{% endif %}" aria-hidden="true"><use href="{{ url_for('static', filename='icons.svg') }}#i-{{ name }}"></use></svg>
+{%- endmacro %}
+
+{# 앱 로고: static/icon/logo.png (원본 static/icon/M.png 에서 배경을 투명하게 다듬은 것) #}
+{% macro logo(cls='') -%}
+<img class="brand-mark{% if cls %} {{ cls }}{% endif %}" src="{{ url_for('static', filename='icon/logo.png') }}" alt="" aria-hidden="true">
+{%- endmacro %}
+
+{# 폴더 📁 / 노트 📄 고정 (아이콘을 따로 정하지 않음) #}
+{% macro page_icon(page) -%}
+{{ icon('folder' if page.kind == 'folder' else 'file') }}
+{%- endmacro %}

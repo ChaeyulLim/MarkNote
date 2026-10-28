@@ -1,0 +1,21 @@
+{% extends "layout.html" %}
+{% from "_icons.html" import icon, logo, page_icon %}
+{% block view %}home{% endblock %}
+{% block content %}
+<div class="home">
+  <h1 class="heading-with-icon">{{ logo('lg') }}<span>MarkNote</span></h1>
+  <button type="button" class="btn-primary" data-action="new-page">{{ icon('folder-plus') }}<span>새 프로젝트</span></button>
+
+  <h2>최근 수정한 페이지</h2>
+  <ul class="page-list">
+    {% for p in recent %}
+    <li>
+      <a href="{{ p.url }}">{{ page_icon(p) }}<span>{{ p.display_title }}</span></a>
+      <span class="muted">{{ p.updated_at.strftime('%Y-%m-%d %H:%M') }}</span>
+    </li>
+    {% else %}
+    <li class="muted">아직 페이지가 없습니다. 새 프로젝트를 만들고 그 안에 노트를 추가해 보세요.</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endblock %}

@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% from "_tree.html" import render_tree %}
+{% from "_icons.html" import icon, logo %}
+{% block body %}
+{% set decks_mode = sidebar_mode == 'decks' %}
+<div class="layout">
+  <aside class="sidebar">
+    <div class="brand-row">
+      <a class="brand" href="{{ url_for('pages.index') }}">{{ logo() }}<span>MarkNote</span></a>
+      <button type="button" class="sidebar-collapse" data-sidebar-collapse title="사이드바 접기 (Ctrl+\)" aria-label="사이드바 접기">{{ icon('chevrons-left') }}</button>
+    </div>
+
+    <div class="side-tabs" role="tablist">
+      <a class="side-tab{% if not decks_mode %} active{% endif %}" href="{{ url_for('pages.index') }}" role="tab" aria-selected="{{ 'false' if decks_mode else 'true' }}">{{ icon('file') }}<span>노트</span></a>
+      <a class="side-tab{% if decks_mode %} active{% endif %}" href="{{ url_for('decks.list_decks') }}" role="tab" aria-selected="{{ 'true' if decks_mode else 'false' }}">{{ icon('presentation') }}<span>프레젠테이션</span></a>
+    </div>
+
+    {% if decks_mode %}
+      <button type="button" class="side-item" data-action="new-deck">{{ icon('plus') }}<span>새 프레젠테이션</span></button>
+      <button type="button" class="side-item" data-chat-toggle aria-pressed="false">{{ icon('sparkles') }}<span>AI 도우미</span></button>
+      <nav class="tree deck-nav">
+        {% for d in sidebar_decks() %}
+        <a class="deck-nav-item" href="{{ url_for('decks.editor', deck_id=d.id) }}" data-deck-id="{{ d.id }}">{{ icon('presentation') }}<span>{{ d.display_title }}</span></a>
+        {% else %}
+        <p class="muted tree-empty">아직 프레젠테이션이 없습니다.</p>
+        {% endfor %}
+      </nav>
+    {% else %}
+      <button type="button" class="side-item" data-action="new-page" title="최상위 폴더 = 프로젝트. 노트는 프로젝트 안에 (＋)">{{ icon('folder-plus') }}<span>새 프로젝트</span></button>
+      <button type="button" class="side-item" data-chat-toggle aria-pressed="false">{{ icon('sparkles') }}<span>AI 도우미</span></button>
+      <nav class="tree">
+        {% set nodes = sidebar_tree() %}
+        {% if nodes %}
+          {{ render_tree(nodes, current_id, open_ids or []) }}
+        {% else %}
+          <p class="muted tree-empty">아직 페이지가 없습니다.</p>
+        {% endif %}
+      </nav>
+    {% endif %}
+
+    <div class="sidebar-bottom">
+      {% if decks_mode %}
+      <a class="side-item" href="{{ url_for('decks.list_decks', view='archived') }}">{{ icon('archive') }}<span>보관함</span></a>
+      <a class="side-item" href="{{ url_for('decks.list_decks', view='trashed') }}">{{ icon('trash') }}<span>휴지통</span></a>
+      {% else %}
+      <button type="button" class="side-item" data-action="import">{{ icon('import') }}<span>가져오기 <span class="muted">.md · .zip</span></span></button>
+      <a class="side-item" href="{{ url_for('transfer.export_all') }}">{{ icon('package') }}<span>전체 내보내기</span></a>
+      <a class="side-item" href="{{ url_for('pages.archive') }}">{{ icon('archive') }}<span>보관함</span></a>
+      <a class="side-item" href="{{ url_for('pages.trash') }}">{{ icon('trash') }}<span>휴지통</span></a>
+      {% endif %}
+      <a class="side-item" href="{{ url_for('pages.settings') }}">{{ icon('settings') }}<span>설정</span></a>
+      <button type="button" class="side-item" data-shortcut-help>{{ icon('keyboard') }}<span>단축키 <span class="muted">Ctrl+/</span></span></button>
+      <form method="post" action="{{ url_for('auth.logout') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="side-item">{{ icon('logout') }}<span>로그아웃</span></button>
+      </form>
+    </div>
+  </aside>
+
+  <main class="content" data-view="{% block view %}{% endblock %}">
+    {% block content %}{% endblock %}
+  </main>
+
+  {% include "_chat_panel.html" %}
+</div>
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+<script src="{{ url_for('static', filename='js/ui.js') }}"></script>
+<script src="{{ url_for('static', filename='js/chat.js') }}"></script>
+{% block scripts %}{% endblock %}
+{% endblock %}

@@ -1,0 +1,22 @@
+{% from "_icons.html" import icon, page_icon %}
+{# data-path: notes 폴더 기준 파일 위치 (폴더 "회사/", 노트 "회사/회의록.md"), 링크에 마우스를 올리면 실제 위치.
+   끌어서 순서 바꾸기·다른 폴더로 옮기기 (ui.js). ＋ 는 폴더에만 (노트 추가) #}
+{% macro render_tree(nodes, current_id, open_ids, depth=0) %}
+<ul class="tree-list">
+  {% for node in nodes %}
+  {% set p = node.page %}
+  {% set abs_path = abs_file_path(p) %}
+  <li class="tree-node{% if p.id in open_ids %} open{% endif %}" data-id="{{ p.id }}" data-kind="{{ p.kind }}" data-path="{{ file_path(p) }}" data-abs="{{ abs_path }}">
+    <div class="tree-row{% if p.id == current_id %} active{% endif %}" style="padding-left: {{ 4 + depth * 14 }}px">
+      <button type="button" class="tree-toggle{% if not node.children %} leaf{% endif %}" aria-label="펼치기/접기">{{ icon('chevron-right') }}</button>
+      <a class="tree-link" href="{{ p.url }}" title="{{ abs_path }}" draggable="true">
+        <span class="tree-icon" data-icon-for="{{ p.id }}">{{ page_icon(p) }}</span>
+        <span class="tree-title" data-title-for="{{ p.id }}">{{ p.display_title }}</span>
+      </a>
+      {% if p.kind == 'folder' %}<button type="button" class="tree-add" data-action="new-child" data-parent="{{ p.id }}" title="노트 추가" aria-label="노트 추가">{{ icon('plus') }}</button>{% endif %}
+    </div>
+    {% if node.children %}{{ render_tree(node.children, current_id, open_ids, depth + 1) }}{% endif %}
+  </li>
+  {% endfor %}
+</ul>
+{% endmacro %}

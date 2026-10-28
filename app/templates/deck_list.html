@@ -1,0 +1,60 @@
+{% extends "layout.html" %}
+{% from "_icons.html" import icon %}
+{% block title %}{{ views[view] }} · MarkNote{% endblock %}
+{% block view %}decks{% endblock %}
+{% block content %}
+<div class="deck-list-page" data-deck-view="{{ view }}">
+  <div class="list-head">
+    <h1 class="heading-with-icon">{{ icon('presentation' if view == 'active' else ('archive' if view == 'archived' else 'trash')) }}<span>{{ views[view] }}</span></h1>
+    {% if view == 'active' %}
+    <button type="button" class="btn-primary" data-action="new-deck">{{ icon('plus') }}<span>새 프레젠테이션</span></button>
+    {% endif %}
+  </div>
+
+  <nav class="deck-views">
+    {% for key, label in views.items() %}
+    <a href="{{ url_for('decks.list_decks', view=key) if key != 'active' else url_for('decks.list_decks') }}" class="{% if key == view %}active{% endif %}">{{ label }}</a>
+    {% endfor %}
+  </nav>
+
+  {% if cards %}
+  <div class="deck-grid">
+    {% for d in cards %}
+    <div class="deck-card" data-deck-id="{{ d.id }}" data-status="{{ d.status }}">
+      <a class="deck-card-thumb" href="{{ url_for('decks.editor', deck_id=d.id) }}" aria-label="{{ d.display_title }} 열기"></a>
+      <div class="deck-card-info">
+        <a class="deck-card-title" href="{{ url_for('decks.editor', deck_id=d.id) }}">{{ d.display_title }}</a>
+        <span class="muted">슬라이드 {{ d.slide_count }}장 · {{ d.updated_at }}</span>
+      </div>
+      <div class="deck-card-actions">
+        {% if view == 'active' %}
+          <button type="button" class="btn-ghost" data-deck-show="{{ d.id }}" title="슬라이드 쇼">{{ icon('play') }}</button>
+          <button type="button" class="btn-ghost" data-action="deck-archive" data-id="{{ d.id }}" data-reload title="보관">{{ icon('archive') }}</button>
+          <button type="button" class="btn-ghost" data-action="deck-trash" data-id="{{ d.id }}" data-reload title="휴지통으로 이동">{{ icon('trash') }}</button>
+        {% else %}
+          <button type="button" class="btn-ghost" data-action="deck-restore" data-id="{{ d.id }}" data-reload title="복원">{{ icon('undo') }}</button>
+          {% if view == 'trashed' %}
+          <button type="button" class="btn-ghost danger" data-action="deck-delete" data-id="{{ d.id }}" data-reload title="영구 삭제">{{ icon('file-x') }}</button>
+          {% else %}
+          <button type="button" class="btn-ghost" data-action="deck-trash" data-id="{{ d.id }}" data-reload title="휴지통으로 이동">{{ icon('trash') }}</button>
+          {% endif %}
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="deck-empty">
+    {{ icon('presentation') }}
+    <p>{% if view == 'active' %}아직 프레젠테이션이 없습니다.{% else %}비어 있습니다.{% endif %}</p>
+    {% if view == 'active' %}<button type="button" class="btn-primary" data-action="new-deck">{{ icon('plus') }}<span>새 프레젠테이션</span></button>{% endif %}
+  </div>
+  {% endif %}
+</div>
+<script type="application/json" id="deck-cards">{{ cards|tojson }}</script>
+{% endblock %}
+{% block scripts %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/deck.css') }}">
+<script src="{{ url_for('static', filename='js/deck/render.js') }}"></script>
+<script src="{{ url_for('static', filename='js/deck/list.js') }}"></script>
+{% endblock %}

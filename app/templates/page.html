@@ -1,0 +1,88 @@
+{% extends "layout.html" %}
+{% from "_icons.html" import icon, page_icon %}
+{% block title %}{{ page.display_title }} · MarkNote{% endblock %}
+{% block view %}page{% endblock %}
+{% block content %}
+{% set trashed = page.status == 'trashed' %}
+<div class="page-top">
+  <nav class="breadcrumbs">
+    {% for a in ancestors %}
+      <a href="{{ a.url }}"><span class="crumb-icon" data-icon-for="{{ a.id }}">{{ page_icon(a) }}</span><span data-title-for="{{ a.id }}">{{ a.display_title }}</span></a>
+      <span class="sep">/</span>
+    {% endfor %}
+    <span class="current"><span class="crumb-icon" data-icon-for="{{ page.id }}">{{ page_icon(page) }}</span><span data-title-for="{{ page.id }}">{{ page.display_title }}</span></span>
+  </nav>
+
+  <div class="page-actions">
+    <button type="button" class="btn-ghost" data-chat-toggle aria-pressed="false" title="AI 도우미 열기/닫기 (Ctrl+J)">{{ icon('sparkles') }}<span>AI</span></button>
+    {% if not trashed %}
+    <button type="button" class="btn-ghost" id="toggle-source" title="페이지 전체 마크다운 편집">{{ icon('code') }}<span>원문 편집</span></button>
+    {% endif %}
+    <details class="menu">
+      <summary class="btn-ghost" aria-label="더보기">{{ icon('more') }}</summary>
+      <div class="menu-list">
+        {% if page.status == 'active' %}
+          <button type="button" data-action="archive" data-id="{{ page.id }}">{{ icon('archive') }}<span>보관하기</span></button>
+          <button type="button" data-action="trash" data-id="{{ page.id }}">{{ icon('trash') }}<span>휴지통으로 이동</span></button>
+        {% else %}
+          <button type="button" data-action="restore" data-id="{{ page.id }}">{{ icon('undo') }}<span>복원</span></button>
+          {% if trashed %}
+          <button type="button" class="danger" data-action="delete" data-id="{{ page.id }}">{{ icon('file-x') }}<span>영구 삭제</span></button>
+          {% else %}
+          <button type="button" data-action="trash" data-id="{{ page.id }}">{{ icon('trash') }}<span>휴지통으로 이동</span></button>
+          {% endif %}
+        {% endif %}
+        <div class="menu-sep"></div>
+        <a href="{{ url_for('transfer.export_page_md', page_id=page.id) }}">{{ icon('download') }}<span>Markdown(.md) 다운로드</span></a>
+        <a href="{{ url_for('transfer.export_page_zip', page_id=page.id) }}">{{ icon('package') }}<span>이미지 포함 (.zip)</span></a>
+      </div>
+    </details>
+  </div>
+</div>
+
+{% if page.status != 'active' %}
+<div class="banner banner-{{ page.status }}">
+  {% if trashed %}{{ icon('trash') }}<span>이 페이지는 휴지통에 있습니다. (읽기 전용)</span>{% else %}{{ icon('archive') }}<span>이 페이지는 보관함에 있습니다.</span>{% endif %}
+  <button type="button" class="btn-ghost" data-action="restore" data-id="{{ page.id }}">{{ icon('undo') }}<span>복원</span></button>
+  {% if trashed %}<button type="button" class="btn-ghost danger" data-action="delete" data-id="{{ page.id }}">{{ icon('file-x') }}<span>영구 삭제</span></button>{% endif %}
+</div>
+{% endif %}
+
+<article class="page" id="page">
+  <div class="page-head">
+    <input id="page-title" class="page-title" value="{{ page.title }}" placeholder="제목 없음"
+           maxlength="200" autocomplete="off" {% if trashed %}readonly{% endif %}>
+  </div>
+  {% include "_file_path.html" %}
+
+  <div id="blocks" class="blocks"></div>
+  {% if not trashed %}
+  <div id="add-block" class="add-block">{{ icon('plus') }}<span>클릭해서 작성하기</span> <span class="muted">· 이미지·.md 파일은 끌어다 놓기</span></div>
+  {% endif %}
+
+  <div id="source-editor" class="source-editor" hidden>
+    <p class="muted">페이지 전체 마크다운 원문입니다. 빈 줄로 블록이 나뉩니다.</p>
+    <textarea id="source-text" spellcheck="false"></textarea>
+    <div class="source-actions">
+      <button type="button" class="btn-ghost" id="source-cancel">취소</button>
+      <button type="button" class="btn-primary" id="source-save">저장</button>
+    </div>
+  </div>
+</article>
+
+{% if prev_page or next_page %}
+<nav class="sibling-nav">
+  {% if prev_page %}
+  <a class="prev" href="{{ prev_page.url }}">{{ icon('chevron-left') }}<span class="sibling-label">이전</span>{{ page_icon(prev_page) }}<span>{{ prev_page.display_title }}</span></a>
+  {% else %}<span></span>{% endif %}
+  {% if next_page %}
+  <a class="next" href="{{ next_page.url }}"><span class="sibling-label">다음</span>{{ page_icon(next_page) }}<span>{{ next_page.display_title }}</span>{{ icon('chevron-right') }}</a>
+  {% endif %}
+</nav>
+{% endif %}
+
+<script type="application/json" id="page-data">{{ data|tojson }}</script>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/editor.js') }}"></script>
+{% endblock %}
