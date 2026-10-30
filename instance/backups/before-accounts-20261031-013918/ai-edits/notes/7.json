@@ -1,0 +1,18 @@
+{
+ "id": 7,
+ "created_at": "2026-10-28T23:32:51",
+ "run_id": "b4bd6a36ee534df083aca60b3d6e89ee",
+ "type": "create",
+ "page_id": 17,
+ "summary": "ZIO 프로젝트 하위 폴더 생성",
+ "before": {
+  "title": "",
+  "blocks": []
+ },
+ "after": {
+  "title": "ZIO 프로젝트",
+  "blocks": []
+ },
+ "changed": [],
+ "status": "applied"
+}

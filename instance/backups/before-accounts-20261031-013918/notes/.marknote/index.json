@@ -1,0 +1,187 @@
+{
+ "next_id": 35,
+ "pages": {
+  "1": {
+   "path": "MarkNote",
+   "created": "2026-10-28T23:25:11",
+   "position": 0
+  },
+  "2": {
+   "path": "MarkNote/Claude Code 연동 기획 (구독 계정 사용).md",
+   "created": "2026-10-28T23:25:11",
+   "position": 2
+  },
+  "4": {
+   "path": "MarkNote/MarkNote 진행 현황 · 남은 일 (2026-10-28 기준).md",
+   "created": "2026-10-28T23:25:11",
+   "position": 1
+  },
+  "3": {
+   "path": "MarkNote/온라인 PPT (프레젠테이션) 기획.md",
+   "created": "2026-10-28T23:25:11",
+   "position": 0
+  },
+  "5": {
+   "path": "MarkNote/저장 방식 — DB 없이 파일로 (2026-10-28 결정).md",
+   "created": "2026-10-28T23:25:11",
+   "position": 3
+  },
+  "16": {
+   "path": "NetnSecu",
+   "created": "2026-10-28T23:32:47",
+   "position": 1
+  },
+  "21": {
+   "path": "NetnSecu/zio",
+   "created": "2026-10-29T00:01:42"
+  },
+  "19": {
+   "path": "NetnSecu/zio/설명글.md",
+   "created": "2026-10-28T23:32:56",
+   "position": 0
+  },
+  "27": {
+   "path": ".trash/7/NetnSecu/zio.md",
+   "created": "2026-10-29T00:19:50",
+   "position": 0
+  },
+  "22": {
+   "path": "NetnSecu/솔루션",
+   "created": "2026-10-29T00:01:42"
+  },
+  "20": {
+   "path": "분류 안 됨/설명글.md",
+   "created": "2026-10-28T23:32:57",
+   "position": 1
+  },
+  "26": {
+   "path": ".trash/6/NetnSecu/솔루션/솔루션.md",
+   "created": "2026-10-29T00:19:01",
+   "position": 1
+  },
+  "29": {
+   "path": ".trash/8/NetnSecu/솔루션.md",
+   "created": "2026-10-29T00:19:58"
+  },
+  "6": {
+   "path": ".trash/1/제목 없음",
+   "created": "2026-10-28T23:25:23",
+   "position": 1
+  },
+  "18": {
+   "path": ".trash/2/NetnSecu/솔루션_.md",
+   "created": "2026-10-28T23:32:51",
+   "position": 1
+  },
+  "24": {
+   "path": ".trash/3/NetnSecu/zio.md",
+   "created": "2026-10-29T00:12:48"
+  },
+  "23": {
+   "path": ".trash/4/NetnSecu/새 폴더",
+   "created": "2026-10-29T00:12:09"
+  },
+  "25": {
+   "path": ".trash/5/NetnSecu/zio/zio.md",
+   "created": "2026-10-29T00:19:00",
+   "position": 1
+  },
+  "30": {
+   "path": "제목 없음",
+   "created": "2026-10-29T21:09:52",
+   "position": 2
+  },
+  "31": {
+   "path": ".trash/10/분류 안 됨/ㄴㅇㄹㄴㅇㄹ.md",
+   "created": "2026-10-29T21:09:55",
+   "position": 3
+  },
+  "32": {
+   "path": "분류 안 됨/ㄴㅇㄹ.md",
+   "created": "2026-10-29T21:09:58",
+   "position": 0
+  },
+  "33": {
+   "path": ".trash/9/분류 안 됨/ㅇㄹ.md",
+   "created": "2026-10-29T21:09:59",
+   "position": 5
+  },
+  "34": {
+   "path": "분류 안 됨",
+   "created": "2026-10-29T21:11:04",
+   "position": 5
+  }
+ },
+ "buckets": {
+  "1": {
+   "status": "trashed",
+   "root": "제목 없음",
+   "kind": "project",
+   "parent": null,
+   "at": "2026-10-28T23:29:32"
+  },
+  "2": {
+   "status": "trashed",
+   "root": "NetnSecu/솔루션_.md",
+   "kind": "note",
+   "parent": "NetnSecu",
+   "at": "2026-10-29T00:13:34"
+  },
+  "3": {
+   "status": "trashed",
+   "root": "NetnSecu/zio.md",
+   "kind": "note",
+   "parent": "NetnSecu",
+   "at": "2026-10-29T00:13:35"
+  },
+  "4": {
+   "status": "trashed",
+   "root": "NetnSecu/새 폴더",
+   "kind": "folder",
+   "parent": "NetnSecu",
+   "at": "2026-10-29T00:13:35"
+  },
+  "5": {
+   "status": "trashed",
+   "root": "NetnSecu/zio/zio.md",
+   "kind": "note",
+   "parent": "NetnSecu/zio",
+   "at": "2026-10-29T00:19:55"
+  },
+  "6": {
+   "status": "trashed",
+   "root": "NetnSecu/솔루션/솔루션.md",
+   "kind": "note",
+   "parent": "NetnSecu/솔루션",
+   "at": "2026-10-29T00:19:58"
+  },
+  "7": {
+   "status": "trashed",
+   "root": "NetnSecu/zio.md",
+   "kind": "note",
+   "parent": "NetnSecu",
+   "at": "2026-10-29T00:20:54"
+  },
+  "8": {
+   "status": "trashed",
+   "root": "NetnSecu/솔루션.md",
+   "kind": "note",
+   "parent": "NetnSecu",
+   "at": "2026-10-29T00:20:54"
+  },
+  "9": {
+   "status": "trashed",
+   "root": "분류 안 됨/ㅇㄹ.md",
+   "kind": "note",
+   "parent": "분류 안 됨",
+   "at": "2026-10-29T21:11:11"
+  },
+  "10": {
+   "status": "trashed",
+   "root": "분류 안 됨/ㄴㅇㄹㄴㅇㄹ.md",
+   "kind": "note",
+   "parent": "분류 안 됨",
+   "at": "2026-10-29T21:11:11"
+  }
+ }
+}

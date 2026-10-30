@@ -1,0 +1,22 @@
+{
+ "id": 27,
+ "created_at": "2026-10-29T00:20:54",
+ "run_id": "ff012d94fea541db918e553eb06f78df",
+ "type": "trash",
+ "page_id": 29,
+ "summary": "NetnSecu/솔루션.md 삭제",
+ "before": {
+  "title": "솔루션",
+  "blocks": [],
+  "file": "NetnSecu/솔루션.md",
+  "notes": 0
+ },
+ "after": {
+  "title": "솔루션",
+  "blocks": [],
+  "file": "NetnSecu/솔루션.md",
+  "notes": 0
+ },
+ "changed": [],
+ "status": "confirmed"
+}

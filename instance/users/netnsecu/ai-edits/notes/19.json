@@ -1,0 +1,22 @@
+{
+ "id": 19,
+ "created_at": "2026-10-29T00:13:35",
+ "run_id": "8da7522d95fe40228a06210686f03efa",
+ "type": "trash",
+ "page_id": 23,
+ "summary": "빈 새 폴더 삭제",
+ "before": {
+  "title": "새 폴더",
+  "blocks": [],
+  "file": "NetnSecu/새 폴더/",
+  "notes": 0
+ },
+ "after": {
+  "title": "새 폴더",
+  "blocks": [],
+  "file": "NetnSecu/새 폴더/",
+  "notes": 0
+ },
+ "changed": [],
+ "status": "applied"
+}

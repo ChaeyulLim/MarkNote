@@ -1,0 +1,22 @@
+{
+ "id": 24,
+ "created_at": "2026-10-29T00:19:55",
+ "run_id": "eb929c1050514cc09a7b90cc29e5e615",
+ "type": "trash",
+ "page_id": 25,
+ "summary": "zio 폴더 안의 zio.md 삭제 (NetnSecu로 이동)",
+ "before": {
+  "title": "zio",
+  "blocks": [],
+  "file": "NetnSecu/zio/zio.md",
+  "notes": 0
+ },
+ "after": {
+  "title": "zio",
+  "blocks": [],
+  "file": "NetnSecu/zio/zio.md",
+  "notes": 0
+ },
+ "changed": [],
+ "status": "applied"
+}

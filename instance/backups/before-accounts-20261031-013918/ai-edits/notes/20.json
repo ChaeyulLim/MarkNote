@@ -1,0 +1,32 @@
+{
+ "id": 20,
+ "created_at": "2026-10-29T00:19:00",
+ "run_id": "fb8675c7030a4c508909c265c40ae0ca",
+ "type": "create",
+ "page_id": 25,
+ "summary": "zio 폴더에 zio.md 설명 노트 생성",
+ "before": {
+  "title": "",
+  "blocks": []
+ },
+ "after": {
+  "title": "zio",
+  "blocks": [
+   "# zio 설명",
+   "## 개요\n- 프로젝트명: zio\n- 소속: NetnSecu\n- 작성일: 2026-10-29",
+   "## 목적\n_(프로젝트의 목적과 배경을 적어 주세요)_",
+   "## 주요 내용\n-",
+   "## 일정\n| 단계 | 기간 | 비고 |\n|---|---|---|\n|  |  |  |",
+   "## 참고\n-"
+  ]
+ },
+ "changed": [
+  0,
+  1,
+  2,
+  3,
+  4,
+  5
+ ],
+ "status": "confirmed"
+}

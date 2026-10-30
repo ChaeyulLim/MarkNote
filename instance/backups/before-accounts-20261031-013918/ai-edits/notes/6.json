@@ -1,0 +1,18 @@
+{
+ "id": 6,
+ "created_at": "2026-10-28T23:32:47",
+ "run_id": "b4bd6a36ee534df083aca60b3d6e89ee",
+ "type": "create",
+ "page_id": 16,
+ "summary": "NetnSecu 프로젝트 생성",
+ "before": {
+  "title": "",
+  "blocks": []
+ },
+ "after": {
+  "title": "NetnSecu",
+  "blocks": []
+ },
+ "changed": [],
+ "status": "applied"
+}

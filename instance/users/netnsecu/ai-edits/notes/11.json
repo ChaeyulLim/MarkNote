@@ -1,0 +1,22 @@
+{
+ "id": 11,
+ "created_at": "2026-10-29T00:03:00",
+ "run_id": "c8eec8c041c34c5f8b1d85791f9b4554",
+ "type": "update",
+ "page_id": 17,
+ "summary": "ZIO 프로젝트 → zio 로 이름 변경",
+ "before": {
+  "title": "ZIO 프로젝트",
+  "blocks": [
+   "[[page:19]]"
+  ]
+ },
+ "after": {
+  "title": "zio",
+  "blocks": [
+   "[[page:19]]"
+  ]
+ },
+ "changed": [],
+ "status": "confirmed"
+}

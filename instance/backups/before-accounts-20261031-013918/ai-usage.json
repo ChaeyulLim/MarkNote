@@ -1,0 +1,12 @@
+{
+ "2026-10-28": {
+  "requests": 3,
+  "input_tokens": 151854,
+  "output_tokens": 5135
+ },
+ "2026-10-29": {
+  "requests": 6,
+  "input_tokens": 2233326,
+  "output_tokens": 52100
+ }
+}

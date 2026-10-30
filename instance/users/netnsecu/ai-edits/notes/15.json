@@ -1,0 +1,18 @@
+{
+ "id": 15,
+ "created_at": "2026-10-29T00:05:22",
+ "run_id": "e6db74eb6dc34a89bf09452fbb01cf99",
+ "type": "update",
+ "page_id": 21,
+ "summary": "ZIO 프로젝트 폴더 → zio 로 이름 변경",
+ "before": {
+  "title": "ZIO 프로젝트",
+  "blocks": []
+ },
+ "after": {
+  "title": "zio",
+  "blocks": []
+ },
+ "changed": [],
+ "status": "confirmed"
+}
