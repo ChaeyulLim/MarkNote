@@ -19,7 +19,7 @@ import secrets
 import threading
 from datetime import datetime
 
-from flask import current_app
+from . import userdata
 
 _lock = threading.Lock()
 ID_RE = re.compile(r"^\d{8}-\d{6}-[0-9a-f]{4}$")
@@ -27,7 +27,7 @@ MAX_MESSAGES = 500  # 화면에 불러오는 최대 메시지 수 (최근 것부
 
 
 def _dir() -> str:
-    path = current_app.config["AI_CHAT_DIR"]
+    path = userdata.path("AI_CHAT_DIR")
     os.makedirs(path, exist_ok=True)
     return path
 

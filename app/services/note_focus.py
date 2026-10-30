@@ -1,7 +1,7 @@
 """채팅에서 이름으로 노트를 가리키기 + 대화가 "다루는 노트" 유지 (docs/claude-integration.md "노트 지목").
 
-- "OO프로젝트의 OO노트 확인해줘" → 메시지에 나온 노트 제목을 서버가 찾아 그 노트 내용을 함께 보낸다.
-  같은 이름이 여러 곳에 있으면 메시지에 함께 나온 프로젝트(상위 페이지) 이름으로 고른다.
+- "OO폴더의 OO노트 확인해줘" → 메시지에 나온 노트 제목을 서버가 찾아 그 노트 내용을 함께 보낸다.
+  같은 이름이 여러 곳에 있으면 메시지에 함께 나온 상위 폴더 이름으로 고른다.
 - AI 가 읽거나 고치거나 만든 노트, 사용자가 이름으로 부른 노트는 대화에 "다루는 노트"로 남고,
   다음 질문부터 매번 최신 내용을 다시 보낸다 → "거기에 추가해줘" 가 그 노트를 가리킨다.
 - 노트 읽기 권한(ai_notes_read)이 꺼져 있으면 아무것도 하지 않는다 (호출하는 쪽에서 확인).
@@ -37,7 +37,7 @@ def mentioned_pages(message: str, exclude_id: int | None = None) -> list[Page]:
     # "회의" 와 "회의록" 이 둘 다 걸리면 긴 것만
     titles = {key(p.title) for p in hits}
     hits = [p for p in hits if not any(t != key(p.title) and key(p.title) in t for t in titles)]
-    # 프로젝트 이름이 그 아래 노트를 가리키는 경로로만 쓰였으면 프로젝트 자체는 빼기
+    # 폴더 이름이 그 아래 노트를 가리키는 경로로만 쓰였으면 폴더 자체는 빼기
     parents = {a.id for p in hits for a in tree.ancestors(p)}
     hits = [p for p in hits if p.id not in parents]
     # 같은 제목이 여러 곳에 있으면 상위 이름이 메시지에 나온 쪽
@@ -53,12 +53,12 @@ def mentioned_pages(message: str, exclude_id: int | None = None) -> list[Page]:
 
 
 def find_page(path: str) -> dict:
-    """AI 도구: "프로젝트 / 노트" 같은 경로(또는 제목만)로 노트 찾기."""
+    """AI 도구: "폴더 / 노트" 같은 경로(또는 제목만)로 노트 찾기."""
     from .note_tools import ToolError, _path
 
     parts = [key(p) for p in PATH_SPLIT_RE.split((path or "").strip()) if p.strip()]
     if not parts:
-        raise ToolError("찾을 노트 이름을 입력하세요. 예: \"프로젝트 / 노트\"")
+        raise ToolError("찾을 노트 이름을 입력하세요. 예: \"폴더 / 노트\"")
     pages = _active_pages()
     name = parts[-1]
     found = [p for p in pages if key(p.title) == name] or [p for p in pages if name in key(p.title)]

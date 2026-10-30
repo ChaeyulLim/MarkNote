@@ -18,6 +18,8 @@ class Run:
     def __init__(self, run_id: str, conversation_id: str):
         self.id = run_id
         self.conversation_id = conversation_id
+        self.owner: int | None = None  # 질문한 계정 (답변 이어 받기·멈추기는 그 계정만)
+        self.paths: dict | None = None  # 그 계정의 저장 위치 (userdata)
         self.events: list[dict] = []
         self.done = False
         self._cond = threading.Condition()

@@ -1,12 +1,10 @@
 """앱 설정 — instance/settings.json (key-value). 설정 화면에서 바꾼다."""
 
-from flask import current_app
-
-from . import filestore
+from . import filestore, userdata
 
 
 def _path() -> str:
-    return current_app.config["SETTINGS_FILE"]
+    return userdata.path("SETTINGS_FILE")
 
 
 def get_value(key: str, default: str | None = None) -> str | None:

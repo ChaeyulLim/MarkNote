@@ -38,7 +38,7 @@ def test_merge_keeps_newest_first_and_caps():
 
 
 def test_chat_keeps_named_note_for_following_messages(ai_client):
-    project = ai_client.post("/api/pages", json={"title": "마케팅"}).get_json()["page"]
+    project = ai_client.post("/api/pages", json={"title": "마케팅", "kind": "folder"}).get_json()["page"]
     note = ai_client.post("/api/pages", json={"title": "주간 보고", "parent_id": project["id"]}).get_json()["page"]
     ai_client.put(f"/api/pages/{note['id']}/source", json={"markdown": "이번 주 매출 정리 {{비밀 메모}}"})
 
@@ -62,7 +62,7 @@ def test_chat_keeps_named_note_for_following_messages(ai_client):
 
 
 def test_no_focus_when_note_reading_is_off(ai_client):
-    ai_client.post("/api/pages", json={"title": "가계부"})
+    ai_client.post("/api/pages", json={"title": "가계부", "kind": "folder"})
     assert ai_client.post("/settings", data={"ai_initial_prompt": ""}).status_code == 302  # 노트 읽기·수정 끔
 
     text = _events(_chat(ai_client, message="가계부 보여줘"))[-1]["text"]

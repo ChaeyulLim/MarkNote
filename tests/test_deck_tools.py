@@ -5,11 +5,10 @@ import sys
 import pytest
 
 from app import create_app
-from app.config import Config
-from app.routes import auth
 from app.services import claude_runner, deck_tools
 from app.services import decks as deck_service
 from app.services.note_tools import ProposalConflict, ToolError
+from conftest import make_config
 
 FAKE = [sys.executable, os.path.join(os.path.dirname(__file__), "fake_claude.py")]
 
@@ -123,18 +122,8 @@ def test_system_prompt_mentions_deck_permission():
 def file_client(tmp_path, monkeypatch):
     """가짜 claude 가 같은 파일(노트·덱)을 열 수 있는 앱."""
 
-    class FileConfig(Config):
-        TESTING = True
-        WTF_CSRF_ENABLED = False
-        ACCESS_PASSWORD = "temp"
-        LOGIN_PASSWORD_HASH = None
-        DATA_DIR = str(tmp_path / "data")
-        NOTES_DIR = UPLOAD_FOLDER = AI_CHAT_DIR = DECKS_DIR = AI_EDITS_DIR = SETTINGS_FILE = USAGE_FILE = None
-        CLAUDE_COMMAND = FAKE
-
-    auth._failed_attempts.clear()
     monkeypatch.setattr(claude_runner, "_status_cache", None)
-    client = create_app(FileConfig).test_client()
+    client = create_app(make_config(tmp_path / "data", CLAUDE_COMMAND=FAKE)).test_client()
     client.post("/login", data={"username": "netnsecu", "password": "temp"})
     return client
 

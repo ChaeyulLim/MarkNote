@@ -1,9 +1,22 @@
 {% extends "base.html" %}
-{% from "_tree.html" import render_tree %}
 {% from "_icons.html" import icon, logo %}
+{% macro explorer(kind, label) %}
+{# 탐색기 (VS Code 탐색기처럼) — 목록은 explorer.js 가 그린다. 화면을 옮겨도 다시 만들지 않는다 #}
+<section class="explorer" data-explorer="{{ kind }}" aria-label="{{ label }}">
+  <div class="explorer-head">
+    <span class="explorer-label">{{ label }}</span>
+    <button type="button" class="explorer-btn" data-explorer-cmd="new-file" title="새 파일 (Ctrl+Alt+N)" aria-label="새 파일">{{ icon('file-plus') }}</button>
+    <button type="button" class="explorer-btn" data-explorer-cmd="new-folder" title="새 폴더" aria-label="새 폴더">{{ icon('folder-plus') }}</button>
+    <button type="button" class="explorer-btn" data-explorer-cmd="refresh" title="새로고침" aria-label="새로고침">{{ icon('refresh') }}</button>
+    <button type="button" class="explorer-btn" data-explorer-cmd="collapse-all" title="모두 접기" aria-label="모두 접기">{{ icon('collapse') }}</button>
+  </div>
+  <div class="explorer-list" role="tree" tabindex="0" aria-multiselectable="true" aria-label="{{ label }} 파일 목록"></div>
+</section>
+{% endmacro %}
 {% block body %}
 {% set decks_mode = sidebar_mode == 'decks' %}
-<div class="layout">
+{% set local_mode = sidebar_mode == 'local' %}
+<div class="layout" data-mode="{{ sidebar_mode or 'notes' }}">
   <aside class="sidebar">
     <div class="brand-row">
       <a class="brand" href="{{ url_for('pages.index') }}">{{ logo() }}<span>MarkNote</span></a>
@@ -11,8 +24,9 @@
     </div>
 
     <div class="side-tabs" role="tablist">
-      <a class="side-tab{% if not decks_mode %} active{% endif %}" href="{{ url_for('pages.index') }}" role="tab" aria-selected="{{ 'false' if decks_mode else 'true' }}">{{ icon('file') }}<span>노트</span></a>
+      <a class="side-tab{% if not decks_mode and not local_mode %} active{% endif %}" href="{{ url_for('pages.index') }}" role="tab" aria-selected="{{ 'false' if decks_mode or local_mode else 'true' }}">{{ icon('file') }}<span>노트</span></a>
       <a class="side-tab{% if decks_mode %} active{% endif %}" href="{{ url_for('decks.list_decks') }}" role="tab" aria-selected="{{ 'true' if decks_mode else 'false' }}">{{ icon('presentation') }}<span>프레젠테이션</span></a>
+      <a class="side-tab{% if local_mode %} active{% endif %}" href="{{ url_for('pages.local') }}" role="tab" aria-selected="{{ 'true' if local_mode else 'false' }}" title="내 PC 의 마크다운 폴더 — 서버에 저장하지 않음">{{ icon('monitor') }}<span>내 PC</span></a>
     </div>
 
     {% if decks_mode %}
@@ -25,21 +39,21 @@
         <p class="muted tree-empty">아직 프레젠테이션이 없습니다.</p>
         {% endfor %}
       </nav>
-    {% else %}
-      <button type="button" class="side-item" data-action="new-page" title="최상위 폴더 = 프로젝트. 노트는 프로젝트 안에 (＋)">{{ icon('folder-plus') }}<span>새 프로젝트</span></button>
+    {% elif local_mode %}
+      {# 내 PC 폴더 — 같은 탐색기(explorer.js)에 local.js 가 드라이버를 붙인다 (서버는 파일 이름도 모름) #}
       <button type="button" class="side-item" data-chat-toggle aria-pressed="false">{{ icon('sparkles') }}<span>AI 도우미</span></button>
-      <nav class="tree">
-        {% set nodes = sidebar_tree() %}
-        {% if nodes %}
-          {{ render_tree(nodes, current_id, open_ids or []) }}
-        {% else %}
-          <p class="muted tree-empty">아직 페이지가 없습니다.</p>
-        {% endif %}
-      </nav>
+      {{ explorer('local', '내 PC') }}
+    {% else %}
+      <button type="button" class="side-item" data-chat-toggle aria-pressed="false">{{ icon('sparkles') }}<span>AI 도우미</span></button>
+      {{ explorer('server', '탐색기') }}
+      <script type="application/json" id="explorer-data">{{ explorer_tree()|tojson }}</script>
     {% endif %}
 
     <div class="sidebar-bottom">
-      {% if decks_mode %}
+      {% if local_mode %}
+      <button type="button" class="side-item" data-local-unhide hidden>{{ icon('undo') }}<span>연결 끊은 항목 다시 보기</span></button>
+      <button type="button" class="side-item" data-local-close hidden>{{ icon('x') }}<span>이 폴더 연결 끊기</span></button>
+      {% elif decks_mode %}
       <a class="side-item" href="{{ url_for('decks.list_decks', view='archived') }}">{{ icon('archive') }}<span>보관함</span></a>
       <a class="side-item" href="{{ url_for('decks.list_decks', view='trashed') }}">{{ icon('trash') }}<span>휴지통</span></a>
       {% else %}
@@ -52,12 +66,15 @@
       <button type="button" class="side-item" data-shortcut-help>{{ icon('keyboard') }}<span>단축키 <span class="muted">Ctrl+/</span></span></button>
       <form method="post" action="{{ url_for('auth.logout') }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button type="submit" class="side-item">{{ icon('logout') }}<span>로그아웃</span></button>
+        <button type="submit" class="side-item">{{ icon('logout') }}<span>로그아웃{% if current_user %} <span class="muted">({{ current_user['username'] }})</span>{% endif %}</span></button>
       </form>
     </div>
   </aside>
 
   <main class="content" data-view="{% block view %}{% endblock %}">
+    {% for message in get_flashed_messages(category_filter=["info"]) %}
+    <p class="toast" role="status">{{ message }}</p>
+    {% endfor %}
     {% block content %}{% endblock %}
   </main>
 
@@ -65,6 +82,7 @@
 </div>
 <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 <script src="{{ url_for('static', filename='js/ui.js') }}"></script>
+<script src="{{ url_for('static', filename='js/explorer.js') }}"></script>
 <script src="{{ url_for('static', filename='js/chat.js') }}"></script>
 {% block scripts %}{% endblock %}
 {% endblock %}

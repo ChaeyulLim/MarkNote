@@ -88,7 +88,7 @@ def test_every_message_rereads_latest_page_but_skips_unchanged(ai_client, monkey
 
 
 def test_location_and_selection_are_sent_as_text(ai_client):
-    parent = ai_client.post("/api/pages", json={"title": "프로젝트"}).get_json()["page"]
+    parent = ai_client.post("/api/pages", json={"title": "프로젝트", "kind": "folder"}).get_json()["page"]
     child = ai_client.post("/api/pages", json={"title": "회의록", "parent_id": parent["id"]}).get_json()["page"]
     location = {"view": "page", "page_id": child["id"], "editing_block": 3, "block_count": 5, "selection": "다음 주까지 확정"}
     text = _events(_chat(ai_client, message="이 부분 다듬어줘", page_id=child["id"], location=location))[-1]["text"]
@@ -183,3 +183,44 @@ def test_cancel_stops_running_process(app, monkeypatch, tmp_path):
 
 def test_chat_requires_login(client):
     assert client.post("/api/ai/chat", json={"message": "hi"}).status_code == 401
+
+
+def test_local_chat_sends_note_once_and_keeps_nothing(app, ai_client):
+    res = ai_client.post("/api/ai/local-chat", json={
+        "message": "요약해줘", "title": "회사 메모", "markdown": "공개 줄\n\n암호는 {{비밀값}}",
+        "history": [{"role": "user", "text": "앞 질문"}],
+    })
+    events = _events(res)
+    assert [e["type"] for e in events][0] == "session" and events[-1]["type"] == "result"
+    result = events[-1]
+    assert result["ok"] is True and "session_id" not in result
+    assert '<local_note title="회사 메모">' in result["text"] and "공개 줄" in result["text"]
+    assert "비밀값" not in result["text"]  # 비공개 표시는 서버에서도 한 번 더 가림
+    assert "앞 질문" in result["text"]  # 이어 묻기는 화면이 보낸 최근 대화로
+    assert "tools=''" in result["text"] and "mcp=None" in result["text"]
+    chats = app.config["AI_CHAT_DIR"]
+    assert not os.path.isdir(chats) or not os.listdir(chats)  # 대화 파일 없음
+
+
+def test_local_chat_respects_notes_read_setting(app, ai_client):
+    from app.services.settings import save_settings
+
+    with app.app_context():
+        save_settings("", notes_read=False, notes_edit=False)
+    events = _events(ai_client.post("/api/ai/local-chat", json={"message": "hi", "markdown": "숨길 내용"}))
+    assert "숨길 내용" not in events[-1]["text"]
+
+
+def test_local_chat_rejects_empty_and_too_long(ai_client):
+    assert ai_client.post("/api/ai/local-chat", json={"message": " "}).status_code == 400
+    assert ai_client.post("/api/ai/local-chat", json={"message": "hi", "markdown": "x" * 200_001}).status_code == 400
+
+
+def test_no_session_persistence_flag():
+    assert "--no-session-persistence" in claude_runner.build_args(["claude"], "m", "p", persist=False)
+    assert "--no-session-persistence" not in claude_runner.build_args(["claude"], "m", "p")
+
+
+def test_local_page_renders(auth_client):
+    html = auth_client.get("/local").get_data(as_text=True)
+    assert 'data-mode="local"' in html and "local-page-template" in html and "js/local.js" in html

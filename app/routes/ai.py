@@ -4,9 +4,10 @@ import sys
 import uuid
 from urllib.parse import urlsplit
 
-from flask import Blueprint, Response, abort, current_app, jsonify, request, url_for
+from flask import Blueprint, Response, abort, current_app, g, jsonify, request, stream_with_context, url_for
 
 from ..services import ai_context, ai_usage, chat_runs, chat_store, claude_auth, claude_runner, deck_tools, note_edits, note_focus, note_tools
+from ..services import secret_text, userdata
 from ..services import decks as deck_service
 from ..services import store
 from ..services import page_tree as tree
@@ -64,8 +65,8 @@ def _tools_config(run_id: str, prefs: dict) -> tuple[dict | None, list[str] | No
         "env": {
             "PYTHONPATH": project_root,
             "PYTHONIOENCODING": "utf-8",
-            # 저장 위치 (파일) — MCP 서버도 같은 파일을 읽고 쓴다
-            **{key: current_app.config[key] for key in MCP_PATHS},
+            # 저장 위치 (로그인한 계정의 폴더) — MCP 서버도 같은 파일을 읽고 쓴다
+            **{key: userdata.path(key) for key in MCP_PATHS},
             "MARKNOTE_RUN_ID": run_id,
             "MARKNOTE_ALLOW_EDIT": "1" if prefs["ai_notes_edit"] else "0",
             "MARKNOTE_ALLOW_DECK_EDIT": "1" if prefs["ai_decks_edit"] else "0",
@@ -123,7 +124,7 @@ def chat():
     deck = deck_service.get_or_404(data["deck_id"]) if data.get("deck_id") is not None else None
     location = data.get("location") or {}
     include_children = bool(data.get("include_children"))
-    # 이 대화가 다루는 노트 + 이번 메시지에서 이름으로 부른 노트 ("OO프로젝트의 OO노트") — 노트 읽기 권한이 있을 때만
+    # 이 대화가 다루는 노트 + 이번 메시지에서 이름으로 부른 노트 ("OO폴더의 OO노트") — 노트 읽기 권한이 있을 때만
     focus = []
     if prefs["ai_notes_read"]:
         mentioned = [p.id for p in note_focus.mentioned_pages(message, page.id if page else None)]
@@ -151,6 +152,8 @@ def chat():
 
     config = current_app.config
     run = chat_runs.Run(uuid.uuid4().hex, conv_id)
+    run.owner = g.user["id"]
+    run.paths = dict(userdata.current() or {})  # 백그라운드 스레드에서도 이 계정의 파일에 기록
     mcp_config, allowed_tools = _tools_config(run.id, prefs)
 
     def start(stdin_context: str, resume: str | None):
@@ -175,6 +178,91 @@ def chat():
     run.add({"type": "run", "run_id": run.id, "conversation_id": conv_id})
     chat_runs.start(run, _process, current_app._get_current_object(), start(context, session_id), prefs, sent_hashes, retry)
     return _stream(run)
+
+
+MAX_LOCAL_NOTE_CHARS = 200_000
+
+
+@bp.post("/local-chat")
+def local_chat():
+    """내 PC 폴더 노트에 대해 묻기. 노트는 이 요청에만 담겨 오고 어디에도 저장하지 않는다:
+    대화 파일·AI 수정 기록 없음, Claude Code 세션 기록도 남기지 않음(--no-session-persistence), 이어 묻기는 화면이 보낸 최근 대화로.
+    비공개 부분은 브라우저가 이미 ⟦🔒번호⟧ 로 바꿔 보낸다 (서버도 원래 내용을 모름). 고친 노트는 화면이 PC 파일에 쓴다."""
+    data = request.get_json(silent=True) or {}
+    message = str(data.get("message") or "").strip()
+    if not message:
+        abort(400, description="메시지를 입력하세요.")
+    if len(message) > MAX_MESSAGE_CHARS:
+        abort(400, description=f"메시지는 {MAX_MESSAGE_CHARS}자 이하로 입력하세요.")
+    if claude_runner.is_busy() or chat_runs.active():
+        abort(409, description="이미 다른 요청을 처리하고 있습니다. 잠시 후 다시 시도하세요.")
+    prefs = get_settings()
+    note = str(data.get("markdown") or "")
+    if len(note) > MAX_LOCAL_NOTE_CHARS:
+        abort(400, description="노트가 너무 깁니다. 일부를 선택해서 물어보세요.")
+    parts = []
+    history = [h for h in (data.get("history") or [])[-10:] if isinstance(h, dict)]
+    if history:
+        lines = [f"{'User' if h.get('role') == 'user' else 'Assistant'}: {str(h.get('text') or '')[:4000]}" for h in history]
+        parts.append("<recent_conversation>\n" + "\n\n".join(lines) + "\n</recent_conversation>")
+    if prefs["ai_notes_read"]:
+        # 혹시 남은 비공개 표시({{ }}, :::비공개)도 한 번 더 가린다
+        title = str(data.get("title") or "")[:200].replace('"', "'")
+        parts.append(f'<local_note title="{title}">\n{secret_text.redact(note)}\n</local_note>')
+        selection = secret_text.redact(str(data.get("selection") or "")[:2000])
+        if selection.strip():
+            parts.append(f"<selection>\n{selection}\n</selection>")
+    else:
+        parts.append("(노트 읽기가 설정에서 꺼져 있어 노트 내용은 보내지 않았습니다.)")
+    config = current_app.config
+    events = claude_runner.stream_chat(
+        message,
+        "\n\n".join(parts),
+        None,
+        workdir=os.path.join(current_app.instance_path, "ai-workdir-local"),
+        model=prefs["ai_model"] or config.get("CLAUDE_MODEL"),
+        effort=prefs["ai_effort"] or None,
+        timeout=config.get("CLAUDE_TIMEOUT", 300),
+        configured=_command(),
+        system_prompt=claude_runner.local_prompt_for(prefs["ai_notes_read"] and prefs["ai_notes_edit"], prefs["ai_initial_prompt"]),
+        persist=False,
+    )
+
+    def generate():
+        text, model, last_context = "", None, 0
+        for event in events:
+            kind = event["type"]
+            if kind == "usage":
+                last_context = ai_usage.context_tokens(event["usage"]) or last_context
+                continue
+            if kind == "limit":
+                ai_usage.set_limit(event["info"])
+                continue
+            if kind == "session":
+                model = event.get("model") or model
+                event = {"type": "session", "model_label": ai_usage.model_label(model)}  # 세션 번호는 쓰지 않음
+            elif kind == "delta":
+                text += event["text"]
+            elif kind == "assistant":
+                text = text or event["text"]
+                continue
+            elif kind == "tool":
+                continue
+            elif kind == "result":
+                final = event["text"] or text
+                usage = ai_usage.summarize(model, last_context, event.pop("model_usage", None))
+                ai_usage.record(usage)
+                event = {
+                    "type": "result",
+                    "ok": event["ok"],
+                    "text": final,
+                    "html": render_block(final),
+                    "usage": {**usage, "today": ai_usage.overview(prefs)["today"], "limits": ai_usage.limits()},
+                }
+            yield _sse(event)
+
+    return Response(stream_with_context(generate()), mimetype="text/event-stream",
+                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 MISSING_SESSION = "No conversation found"  # claude --resume 할 대화 기록이 없을 때 (보관 기간이 지나 지워짐 등)
@@ -212,6 +300,7 @@ def _with_fallback(run: chat_runs.Run, events, retry, hashes: list):
 def _process(run: chat_runs.Run, app, events, prefs: dict, sent_hashes: dict, retry=None) -> None:
     """(백그라운드 스레드) Claude Code 이벤트를 화면용으로 바꿔 Run 에 쌓고, 끝나면 대화 파일에 기록."""
     with app.app_context():
+        userdata.use(run.paths or None)
         text = ""
         model, last_context = None, 0
         tools: list[dict] = []
@@ -407,7 +496,7 @@ def new_conversation():
 @bp.get("/runs/<run_id>/events")
 def run_events(run_id):
     run = chat_runs.get(run_id)
-    if run is None:
+    if run is None or run.owner != g.user["id"]:
         abort(404, description="이미 끝났거나 없는 답변입니다.")
     return _stream(run, request.args.get("after", 0, type=int))
 
@@ -428,6 +517,10 @@ def prefs():
 
 @bp.post("/cancel")
 def cancel():
+    # Claude 는 서버에 하나라 한 번에 한 답변만 — 다른 계정의 답변은 멈추지 못하게
+    run = chat_runs.active()
+    if run is not None and run.owner != g.user["id"]:
+        abort(403, description="다른 계정의 답변은 멈출 수 없습니다.")
     return jsonify(cancelled=claude_runner.cancel())
 
 
@@ -497,8 +590,15 @@ def _is_same_computer() -> bool:
     return request.remote_addr in ("127.0.0.1", "::1") and host in _LOCAL_HOSTS
 
 
+def _admin_only():
+    """Claude 로그인은 서버 전체에 하나 — 관리자만 바꿀 수 있다."""
+    if not g.user["is_admin"]:
+        abort(403, description="Claude 로그인은 관리자만 바꿀 수 있습니다.")
+
+
 @bp.post("/login")
 def login():
+    _admin_only()
     if not _is_same_computer():
         return jsonify(
             state="remote",
@@ -518,11 +618,13 @@ def login_state():
 
 @bp.post("/login/cancel")
 def login_cancel():
+    _admin_only()
     return jsonify(claude_auth.cancel_login())
 
 
 @bp.post("/logout")
 def logout():
+    _admin_only()
     # 다른 계정의 Claude 대화는 이어 갈 수 없으므로, 기록은 두고 다음 질문부터 새 Claude 대화로
     chat_store.append(chat_store.current_id(), {"t": "session", "session_id": None})
     return jsonify(claude_auth.logout(_command()))

@@ -4,7 +4,7 @@
 - 페이지 강조: 지금 파일 내용이 AI 가 쓴 그대로일 때만 (사용자가 고쳐 저장하면 강조는 저절로 사라짐)
 - 되돌리기: 그 뒤 파일이 그대로면 통째로 원래대로. 사용자가 다른 곳을 고쳤으면 AI 가 바꾼 부분만 되돌리고,
   AI 가 바꾼 바로 그 부분을 고쳤으면 ProposalConflict (force 면 수정 전 전체로)
-- 비공개 표시({{ }})·같은 이름 금지 규칙은 note_tools 와 같다. 프로젝트(폴더)에는 내용을 쓸 수 없다
+- 비공개 표시({{ }})·같은 이름 금지 규칙은 note_tools 와 같다. 폴더에는 내용을 쓸 수 없다
 - 삭제(trash_page)는 실제로 지우지 않고 휴지통(notes/.trash/)으로 옮긴다. 되돌리기 = 원래 자리로 복원
 """
 
@@ -42,7 +42,7 @@ def apply_blocks(page: Page, contents: list[str]) -> list[int]:
 def edit_page(run_id: str, page_id: int, markdown: str, summary: str, title: str | None = None) -> dict:
     page = _visible_page(page_id)
     if tree.is_folder(page) and (markdown or "").strip():
-        raise ToolError("폴더에는 내용이 없습니다. 그 안의 노트(또는 폴더 설명 README.md)를 고치거나 create_page 로 노트를 만드세요.")
+        raise ToolError("폴더에는 내용이 없습니다. 그 안의 노트를 고치거나 create_page 로 노트를 만드세요.")
     base = tree.page_source(page)
     markdown = _restore_secrets(markdown, base)
     new_title = title.strip()[:200] if title is not None else None
@@ -76,10 +76,8 @@ def create_page(run_id: str, title: str, markdown: str, parent_id: int | None = 
     if not title:
         raise ToolError("새 페이지 제목을 입력하세요.")
     parent = _visible_page(parent_id) if parent_id is not None else None
-    folder = folder or parent is None  # 맨 위에는 폴더(프로젝트)만
     if folder and (markdown or "").strip():
-        raise ToolError("폴더에는 내용을 쓸 수 없습니다. 노트는 폴더 안에 만드세요 (parent_id 에 폴더 id, "
-                        "새 프로젝트·폴더가 필요하면 markdown 을 비워 먼저 만드세요).")
+        raise ToolError("폴더에는 내용을 쓸 수 없습니다. 폴더를 folder=true 로 먼저 만들고 그 안(parent_id)에 노트를 만드세요.")
     _check_name(parent.id if parent else None, title, kind="folder" if folder else "note")
     markdown = _restore_secrets(markdown, "")
     try:

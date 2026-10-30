@@ -64,7 +64,8 @@ def test_project_has_no_content(ctx):
     with pytest.raises(note_tools.ToolError):
         note_edits.edit_page("r1", project.id, "내용", "")
     with pytest.raises(note_tools.ToolError):
-        note_edits.create_page("r1", "새 프로젝트", "내용")  # 맨 위(프로젝트)는 내용 없이만
+        note_edits.create_page("r1", "새 프로젝트", "내용", folder=True)  # 폴더(프로젝트)는 내용 없이만
+    assert note_edits.create_page("r1", "맨위 메모", "내용")["file"] == "맨위 메모.md"  # 폴더가 아니면 맨 위 노트
 
 
 def test_trash_moves_to_trash_and_undo_restores(ctx, app):

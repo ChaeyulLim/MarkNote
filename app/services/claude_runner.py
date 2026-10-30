@@ -69,6 +69,31 @@ NO_DECK_EDIT_PROMPT = (
 )
 
 
+# 내 PC 폴더 노트 (서버에 없는 노트) — 도구 없이, 질문에 함께 온 노트만 보고 답한다. 고칠 때는 노트 전체를 태그로 돌려준다
+LOCAL_PROMPT = (
+    "You are the AI assistant inside MarkNote, a Markdown note app. The user is editing a note that is stored only "
+    "on their own PC, not on the server. stdin gives its current content in <local_note> (and optionally text the "
+    "user selected, and the recent conversation). You have no tools: you cannot see other notes. "
+    "Private parts of the note are hidden and replaced with markers like ⟦🔒0⟧ — you cannot know what they contain. "
+    "Reply in the user's language."
+)
+LOCAL_EDIT_PROMPT = (
+    "When the user asks you to change, add to, fix, translate, reorganize or rewrite the note, first say briefly what "
+    "you changed, then output the COMPLETE new note body (Markdown, without the title) between a line "
+    "<marknote-note> and a line </marknote-note>. MarkNote saves it to the file on the user's PC (the user can undo). "
+    "Keep every ⟦🔒N⟧ marker exactly as it is (never remove, change or duplicate them). "
+    "Output the tag only when the note should actually change; for questions, just answer."
+)
+LOCAL_NO_EDIT_PROMPT = "You cannot change the note (turned off in settings): only answer; never output a full rewritten note."
+
+
+def local_prompt_for(notes_edit: bool, custom: str = "") -> str:
+    prompt = f"{LOCAL_PROMPT} {LOCAL_EDIT_PROMPT if notes_edit else LOCAL_NO_EDIT_PROMPT}"
+    if custom.strip():
+        prompt += "\n\nUser's custom instructions (follow them):\n" + custom.strip()
+    return prompt
+
+
 def system_prompt_for(notes_read: bool, notes_edit: bool, custom: str = "", decks_edit: bool = False,
                       notes_delete: bool = False) -> str:
     """기본 지침 + 권한별 도구 안내 + 설정 화면의 사용자 초기 프롬프트."""
@@ -268,6 +293,7 @@ def build_args(
     mcp_config_path: str | None = None,
     allowed_tools: list[str] | None = None,
     effort: str | None = None,
+    persist: bool = True,
 ) -> list[str]:
     args = [
         *command, "-p", message,
@@ -288,6 +314,8 @@ def build_args(
         args += ["--model", model]
     if effort:
         args += ["--effort", effort]
+    if not persist:
+        args.append("--no-session-persistence")  # 이 대화를 Claude Code 기록(~/.claude)에도 남기지 않음
     return args
 
 
@@ -303,6 +331,7 @@ def stream_chat(
     mcp_config: dict | None = None,
     allowed_tools: list[str] | None = None,
     effort: str | None = None,
+    persist: bool = True,
 ) -> Iterator[dict]:
     """claude -p 를 실행하며 이벤트를 차례로 내보낸다. 동시에 하나만 실행한다.
 
@@ -326,7 +355,7 @@ def stream_chat(
             mcp_config_path = os.path.join(workdir, "mcp-config.json")
             with open(mcp_config_path, "w", encoding="utf-8") as f:
                 json.dump(mcp_config, f)
-        args = build_args(command, message, system_prompt, session_id, model, mcp_config_path, allowed_tools, effort)
+        args = build_args(command, message, system_prompt, session_id, model, mcp_config_path, allowed_tools, effort, persist)
         proc = subprocess.Popen(
             args,
             cwd=workdir,

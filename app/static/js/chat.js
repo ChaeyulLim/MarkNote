@@ -10,14 +10,23 @@
   const input = panel.querySelector(".chat-input");
   const sendBtn = panel.querySelector(".chat-send");
   const statusBtn = panel.querySelector(".chat-status");
-  const pageId = panel.dataset.pageId ? Number(panel.dataset.pageId) : null;
-  const deckId = panel.dataset.deckId ? Number(panel.dataset.deckId) : null;
+  // 지금 화면의 페이지·프레젠테이션 — 새로고침 없이 화면이 바뀌면 app.js 가 data-* 를 바꿔 준다
+  let pageId = null;
+  let deckId = null;
+  function readPanelContext() {
+    pageId = panel.dataset.pageId ? Number(panel.dataset.pageId) : null;
+    deckId = panel.dataset.deckId ? Number(panel.dataset.deckId) : null;
+  }
+  readPanelContext();
 
   const OPEN_KEY = "marknote.chatOpen";
   const WIDTH_KEY = "marknote.chatWidth";
   const MIN_WIDTH = 300;
   const MAX_WIDTH = 640;
 
+  // 내 PC 폴더 화면(local.js): 물을 때만 지금 노트를 보내고(/api/ai/local-chat), 대화는 서버에 남기지 않는다 — 이 화면에만
+  const localMode = Boolean(document.querySelector('.layout[data-mode="local"]'));
+  const localHistory = []; // [{role, text}] 이어 묻기용 (이 화면을 떠나면 사라짐)
   let sessionId = null; // Claude Code 대화 ID (이어서 묻기용) — 서버 대화 파일에도 있음
   let conversationId = null; // 서버에 기록되는 대화 (instance/ai-chats/<id>.jsonl)
   let streaming = null; // {controller}
@@ -88,6 +97,10 @@
     if (e.target.closest("[data-chat-toggle]")) setOpen(!isOpen());
   });
   panel.querySelector("[data-chat-close]").addEventListener("click", () => setOpen(false));
+  // 새로고침 없이 화면이 바뀌면 새 본문의 AI 버튼 표시를 맞춘다 (app.js go)
+  document.addEventListener("marknote:pageload", () =>
+    document.querySelectorAll("[data-chat-toggle]").forEach((btn) => btn.setAttribute("aria-pressed", String(isOpen())))
+  );
   document.addEventListener("keydown", (e) => {
     if (document.querySelector(".pp-show")) return; // 슬라이드 쇼 중에는 열지 않음
     if (e.key === "F2" && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey) {
@@ -298,13 +311,13 @@
     trash: ["trash", "휴지통으로 옮김"], // 영구 삭제 아님 — 되돌리기 = 원래 자리로 복원
   };
 
-  // AI 가 휴지통으로 옮긴 노트·폴더: 사이드바에서 빼고, 지금 보는 페이지가 그 안이면 휴지통 화면으로
+  // AI 가 휴지통으로 옮긴 노트·폴더: 탐색기 목록을 다시 받고, 지금 보는 페이지가 그 안이면 휴지통 화면으로
   function applyTrashEdit(edit) {
-    const node = document.querySelector(`.tree-node[data-id="${edit.page_id}"]`);
     const current = window.editorPageId ?? JSON.parse(document.getElementById("page-data")?.textContent || "{}").page?.id;
-    const affected = current === edit.page_id || Boolean(node?.querySelector(`.tree-node[data-id="${current}"]`));
-    node?.remove();
-    if (affected) location.href = `/p/${current}`;
+    const ex = window.explorer;
+    const affected = current === edit.page_id || Boolean(ex?.isInside(String(current), String(edit.page_id)));
+    if (affected) window.go(`/p/${current}`);
+    else ex?.refresh().catch(console.error);
   }
 
   function renderNoteEdit(edit) {
@@ -400,12 +413,12 @@
     renderNoteEditActions(card, data.edit);
     if (action === "undo" && edit.kind === "trash") {
       // 원래 자리로 복원됨 → 사이드바·화면을 새 상태로
-      if (window.editorPageId === edit.page_id || !document.querySelector(".tree-node")) location.href = `/p/${edit.page_id}`;
-      else location.reload();
+      if (window.editorPageId === edit.page_id || !window.explorer) window.go(`/p/${edit.page_id}`);
+      else window.reloadPage();
       return;
     }
     if (!here) return;
-    if (action === "undo" && edit.kind === "create") location.href = "/";
+    if (action === "undo" && edit.kind === "create") window.go("/");
     else if (action === "undo") await window.editorReload?.();
     else window.refreshAiEdits?.();
   }
@@ -590,10 +603,18 @@
       const options = contextOptions();
       if (options.location.selection) addSelectionNote(msg, options.location.selection);
       window.setChatSelection(""); // 선택한 글자는 이번 질문에만
-      const response = await fetch("/api/ai/chat", {
+      let url = "/api/ai/chat";
+      let payload = { message: text, conversation_id: conversationId, ...options };
+      if (localMode) {
+        const note = window.localNoteForAI?.() || {};
+        url = "/api/ai/local-chat";
+        payload = { message: text, title: note.title, markdown: note.markdown, selection: window.maskSecrets(options.location.selection || ""), history: localHistory.slice(-10) };
+        localHistory.push({ role: "user", text });
+      }
+      const response = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-CSRFToken": csrfToken },
-        body: JSON.stringify({ message: text, conversation_id: conversationId, ...options }),
+        body: JSON.stringify(payload),
         signal: controller.signal,
       });
       if (!response.ok) {
@@ -639,6 +660,10 @@
           state.finished = true;
           if (event.session_id) sessionId = event.session_id;
           applyUsage(event.usage);
+          if (localMode && event.ok) {
+            finishLocalAnswer(msg, event);
+            return;
+          }
           if (event.ok) finishAssistantMessage(msg, { markdown: event.text, html: event.html });
           else failAssistantMessage(msg, event.text || "Claude Code가 오류를 반환했습니다.");
           (event.proposals || []).forEach((p) => {
@@ -670,6 +695,56 @@
     return state;
   }
 
+  // 내 PC 노트: 답에 고친 노트(<marknote-note>)가 있으면 PC 파일에 반영하고 [되돌리기] 카드
+  async function finishLocalAnswer(msg, event) {
+    localHistory.push({ role: "assistant", text: event.text.replace(/<marknote-note>[\s\S]*?<\/marknote-note>/, "(노트를 고침)") });
+    let applied = null;
+    let problem = "";
+    try {
+      applied = await window.localApplyAi?.(event.text);
+    } catch (err) {
+      problem = err.message;
+    }
+    if (!applied) {
+      finishAssistantMessage(msg, { markdown: event.text, html: event.html });
+      if (problem) msg.appendChild(addSystemNote(problem));
+      return;
+    }
+    const tmp = document.createElement("div");
+    tmp.textContent = applied.text;
+    finishAssistantMessage(msg, { markdown: applied.text, html: `<p>${tmp.innerHTML.replace(/\n/g, "<br>")}</p>` });
+    const card = document.createElement("div");
+    card.className = "chat-edit-card";
+    const label = document.createElement("span");
+    label.innerHTML = `${icon("pencil")}<span>내 PC 노트를 고쳤습니다 (서버에는 저장 안 함)</span>`;
+    const btn = cardButton("되돌리기", "ghost", async () => {
+      btn.disabled = true;
+      try {
+        if (btn.dataset.state === "undone") {
+          await applied.redo();
+          btn.dataset.state = "";
+          btn.lastChild.textContent = "되돌리기";
+        } else {
+          await applied.undo();
+          btn.dataset.state = "undone";
+          btn.lastChild.textContent = "다시 적용";
+        }
+      } finally {
+        btn.disabled = false;
+      }
+    });
+    card.append(label, btn);
+    msg.appendChild(card);
+    scrollToBottom();
+  }
+  function addSystemNote(text) {
+    const note = document.createElement("p");
+    note.className = "chat-msg-selection";
+    note.innerHTML = `${icon("alert")}<span></span>`;
+    note.lastChild.textContent = text;
+    return note;
+  }
+
   // ---------- 대화 복원 (페이지를 옮겨도 서버 파일에서 다시 불러옴) ----------
   let leaving = false;
   window.addEventListener("pagehide", () => (leaving = true));
@@ -690,7 +765,7 @@
     (m.note_edits || []).forEach((edit) => msg.appendChild(renderNoteEdit(edit)));
   }
 
-  // ---------- 다루는 노트 ("OO프로젝트의 OO노트" 로 부르거나 AI 가 읽고 고친 노트) ----------
+  // ---------- 다루는 노트 ("OO폴더의 OO노트" 로 부르거나 AI 가 읽고 고친 노트) ----------
   const focusBar = panel.querySelector(".chat-focus");
   function renderFocus(list = []) {
     focusBar.replaceChildren();
@@ -1370,12 +1445,12 @@
     if (!streaming) runCommand("/resume");
   });
 
-  // 참고 범위 칩 토글 (대화 중에 바꾸면 새 대화부터 반영)
-  panel.querySelectorAll(".ctx-chip").forEach((chip) => {
-    chip.addEventListener("click", () => {
-      chip.setAttribute("aria-pressed", String(chip.getAttribute("aria-pressed") !== "true"));
-    });
+  // 참고 범위 칩 토글 (대화 중에 바꾸면 새 대화부터 반영). 칩은 화면이 바뀌면 새로 그려지므로 위임
+  panel.querySelector(".chat-composer").addEventListener("click", (e) => {
+    const chip = e.target.closest(".chat-context .ctx-chip");
+    if (chip) chip.setAttribute("aria-pressed", String(chip.getAttribute("aria-pressed") !== "true"));
   });
+  document.addEventListener("marknote:pageload", readPanelContext);
 
   // 답변 동작: 복사 / 페이지에 추가 / 다시 묻기
   messages.addEventListener("click", async (e) => {
@@ -1443,7 +1518,7 @@
       connected
         ? { label: "Claude 연결 해제 (/logout)", icon: "unlock", action: () => runCommand("/logout") }
         : { label: "Claude 연결 (/login)", icon: "key", action: () => runCommand("/login") },
-      { label: "AI 설정", icon: "settings", action: () => (location.href = "/settings") },
+      { label: "AI 설정", icon: "settings", action: () => window.go("/settings") },
       "sep",
       { label: "패널 닫기", icon: "x", hint: "F2", action: () => setOpen(false) },
     ];
@@ -1526,5 +1601,10 @@
     loadUsage();
   }
   requestAnimationFrame(() => requestAnimationFrame(() => drawer.classList.remove("no-anim")));
-  restoreConversation(); // 어느 페이지에서든 이어 가던 대화를 그대로
+  if (localMode) {
+    // 내 PC 노트 대화는 서버 대화 기록과 섞지 않는다
+    empty.querySelector(".muted").textContent = "지금 노트를 바탕으로 답합니다. 물을 때만 노트가 서버를 거쳐 Claude 에게 전달되고, 대화는 저장되지 않습니다 (이 화면을 떠나면 사라짐). 비공개 표시 부분은 보내지 않습니다.";
+  } else {
+    restoreConversation(); // 어느 페이지에서든 이어 가던 대화를 그대로
+  }
 })();

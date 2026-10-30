@@ -1,11 +1,12 @@
 from datetime import datetime
 from io import BytesIO
 
-from flask import Blueprint, abort, current_app, jsonify, redirect, request, send_file, url_for
+from flask import Blueprint, abort, jsonify, redirect, request, send_file, url_for
 
 from ..services import page_tree as tree
 from ..services import transfer
 from ..services.transfer import TransferError
+from ..services import userdata
 
 bp = Blueprint("transfer", __name__)
 
@@ -26,14 +27,14 @@ def export_page_md(page_id):
 @bp.get("/export/page/<int:page_id>.zip")
 def export_page_zip(page_id):
     page = tree.get_or_404(page_id)
-    data = transfer.export_zip([page], current_app.config["UPLOAD_FOLDER"])
+    data = transfer.export_zip([page], userdata.path("UPLOAD_FOLDER"))
     return _download(data, f"{transfer.safe_name(page.display_title)}.zip", "application/zip")
 
 
 @bp.get("/export/all.zip")
 def export_all():
     roots = [node["page"] for node in tree.active_tree()]
-    data = transfer.export_zip(roots, current_app.config["UPLOAD_FOLDER"])
+    data = transfer.export_zip(roots, userdata.path("UPLOAD_FOLDER"))
     return _download(data, f"MarkNote-{datetime.now():%Y%m%d-%H%M}.zip", "application/zip")
 
 
@@ -47,7 +48,7 @@ def import_files():
 
     try:
         roots = transfer.import_markdown(
-            uploads, parent, current_app.config["UPLOAD_FOLDER"], request.form.get("on_conflict")
+            uploads, parent, userdata.path("UPLOAD_FOLDER"), request.form.get("on_conflict")
         )
     except transfer.ImportConflict as err:
         # 화면이 경고를 띄우고 "덮어쓰기 / 이름 바꿔서 가져오기" 를 골라 on_conflict 와 함께 다시 보냄

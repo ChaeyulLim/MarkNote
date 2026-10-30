@@ -15,6 +15,8 @@ class Config:
     SESSION_COOKIE_SAMESITE = "Lax"
     SESSION_COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", "false").lower() == "true"
     PERMANENT_SESSION_LIFETIME = timedelta(days=30)  # "이 기기에서 로그인 유지" 기간
+    # CSRF 토큰은 로그인(세션) 동안 유효 — 기본 1시간이면 오래 열어 둔 편집 화면의 저장이 "token has expired" 로 실패
+    WTF_CSRF_TIME_LIMIT = None
 
     # 로그인 실패 제한: LOCK_SECONDS 초 안에 MAX_ATTEMPTS 회 실패하면 잠금
     LOGIN_MAX_ATTEMPTS = 5
@@ -22,7 +24,7 @@ class Config:
 
     # 저장 위치 — DB 없이 파일 (docs/storage.md). DATA_DIR 이 없으면 instance/ 폴더
     DATA_DIR = os.environ.get("DATA_DIR")
-    NOTES_DIR = os.environ.get("NOTES_DIR")  # 노트: <DATA_DIR>/notes/프로젝트/노트.md
+    NOTES_DIR = os.environ.get("NOTES_DIR")  # 노트: <DATA_DIR>/notes/폴더/노트.md
     UPLOAD_FOLDER = os.environ.get("UPLOAD_FOLDER")  # 그림
     AI_CHAT_DIR = os.environ.get("AI_CHAT_DIR")  # AI 도우미 대화 기록 (JSONL 파일)
     # 아래는 보통 비워 둔다 (DATA_DIR 아래). AI 도구(MCP 서버)를 띄울 때 같은 위치를 넘겨주는 데 쓴다

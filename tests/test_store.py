@@ -65,14 +65,12 @@ def test_folders_first_then_user_order(ctx):
     assert [p.id for p in store.children(project.id)] == [sub.id, b.id, a.id]
 
 
-def test_readme_is_folder_description(ctx, app):
+def test_readme_is_an_ordinary_note(ctx, app):
     project = make_page(None, "회사")
-    readme = tree.create_readme(project)
-    store.replace_source(readme, "회사 소개")
+    readme = make_page(project, "README", "회사 소개")
     make_page(project, "회의록")
-    assert [p.title for p in store.children(project.id)] == ["회의록"]  # 목록에는 안 나옴
-    assert tree.readme(store.get(project.id)).id == readme.id
-    assert "회사/README.md" in _files(app)
+    assert [p.title for p in store.children(project.id)] == ["README", "회의록"]  # 다른 노트와 똑같이 보임
+    assert readme.kind == "note" and "회사/README.md" in _files(app)
 
 
 def test_rename_and_move_keep_ids(ctx, app):
@@ -126,13 +124,18 @@ def test_trash_and_restore_to_original_place(ctx, app):
     assert tree.page_source(store.get(note.id)) == "내용"
 
 
-def test_restored_note_without_folder_goes_to_inbox(ctx):
+def test_restored_note_without_folder_recreates_the_folder(ctx):
     project = make_page(None, "회사")
-    note = make_page(project, "회의록", "x")
+    sub = folder(project, "2026")
+    note = make_page(sub, "회의록", "x")
     tree.trash(store.get(note.id))
     tree.trash(store.get(project.id))
     restored = tree.restore(store.get(note.id))
-    assert restored.path == f"{tree.INBOX_TITLE}/회의록.md"
+    assert restored.path == "회사/2026/회의록.md"  # 원래 경로의 폴더를 다시 만들어 그 자리로
+    assert tree.page_source(restored) == "x"
+    top = make_page(None, "메모", "y", kind="note")
+    tree.trash(store.get(top.id))
+    assert tree.restore(store.get(top.id)).path == "메모.md"
 
 
 def test_files_added_outside_get_ids(ctx, app):
@@ -141,12 +144,12 @@ def test_files_added_outside_get_ids(ctx, app):
     with open(os.path.join(root, "밖", "메모.md"), "w", encoding="utf-8") as f:
         f.write("# 손으로 만든 노트")
     with open(os.path.join(root, "맨위.md"), "w", encoding="utf-8") as f:
-        f.write("무시됨")
+        f.write("맨 위 노트")
     store.invalidate()
     project = tree.name_conflict(None, "밖")
     assert project is not None and project.kind == "folder"
     assert [(p.title, p.kind) for p in store.children(project.id)] == [("폴더", "folder"), ("메모", "note")]
-    assert [p.title for p in store.children(None)] == ["밖"]  # 맨 위 .md 는 무시
+    assert [(p.title, p.kind) for p in store.children(None)] == [("밖", "folder"), ("맨위", "note")]  # 맨 위 낱개 노트도
     memo = tree.name_conflict(project.id, "메모")
     assert tree.page_source(memo) == "# 손으로 만든 노트"
     store.invalidate()

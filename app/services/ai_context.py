@@ -52,7 +52,7 @@ def _body(page: Page) -> str:
 
 
 def _folder_text(folder: Page, tag: str) -> str:
-    """폴더 = 안의 노트 전부 (하위 폴더까지, README.md = 설명)."""
+    """폴더 = 안의 노트 전부 (하위 폴더까지)."""
     path = " / ".join(p.display_title for p in [*tree.ancestors(folder), folder])
     notes = "".join(
         f'<note id="{n.id}" file="{_quote(tree.file_path(n))}">\n{_body(n)}</note>\n' for n in tree.folder_notes(folder)
@@ -163,7 +163,7 @@ def _digest(text: str) -> str:
 
 def working_note(page: Page) -> str:
     """대화가 다루는 노트 (채팅에서 이름으로 부르거나 AI 가 읽고 고친 노트) — 매번 최신 내용.
-    폴더(프로젝트)면 안의 노트 전부 — "OO 프로젝트 확인해줘"."""
+    폴더면 안의 노트 전부 — "OO 폴더 확인해줘"."""
     if tree.is_folder(page):
         return _clip(_folder_text(page, "working_note"))
     path = " / ".join(p.display_title for p in [*tree.ancestors(page), page])

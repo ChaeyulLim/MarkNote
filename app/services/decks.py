@@ -20,6 +20,7 @@ from flask import abort, current_app
 
 from . import filestore
 from .attachments import find_upload
+from . import userdata
 
 W, H = 1280, 720
 ID_RE = re.compile(r"^[a-z][a-z0-9]{3,23}$")
@@ -263,7 +264,7 @@ class Deck:
 
 
 def _dir() -> str:
-    return current_app.config["DECKS_DIR"]
+    return userdata.path("DECKS_DIR")
 
 
 def _path(deck_id: int) -> str:
@@ -381,7 +382,7 @@ def image_ids(deck: Deck) -> set[str]:
 
 def delete_permanently(deck: Deck) -> None:
     """덱 파일과 그 슬라이드의 그림 파일을 지운다 (다른 덱이 함께 쓰는 그림은 남김)."""
-    upload_folder = current_app.config["UPLOAD_FOLDER"]
+    upload_folder = userdata.path("UPLOAD_FOLDER")
     shared = set().union(*(image_ids(d) for d in all_decks() if d.id != deck.id))
     for file_id in image_ids(deck) - shared:
         name = find_upload(upload_folder, file_id)

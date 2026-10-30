@@ -66,13 +66,13 @@ def test_tools_and_direct_edit_roundtrip(mcp, tmp_path):
     names = [t["name"] for t in rpc("tools/list", {}, 2)["result"]["tools"]]
     assert names == ["search_pages", "find_page", "list_pages", "read_page", "edit_page", "create_page", "list_decks", "read_deck"]
 
-    # 내용 있는 노트는 프로젝트(폴더) 안에만
-    assert "프로젝트" in _call(rpc, "create_page", {"title": "테스트", "markdown": "# 안녕"}, 3)["error"]
-    project = _call(rpc, "create_page", {"title": "프로젝트", "markdown": ""}, 6)
+    # parent_id 없이 만들면 맨 위 낱개 노트
+    assert _call(rpc, "create_page", {"title": "맨위", "markdown": "# 안녕"}, 3)["file"] == "맨위.md"
+    project = _call(rpc, "create_page", {"title": "프로젝트", "markdown": "", "folder": True}, 6)
     created = _call(rpc, "create_page", {"title": "테스트", "markdown": "# 안녕", "parent_id": project["page_id"]}, 7)
     assert created["applied"] is True and created["file"] == "프로젝트/테스트.md"
     assert (tmp_path / "data" / "notes" / "프로젝트" / "테스트.md").read_text(encoding="utf-8").strip() == "# 안녕"
-    assert [p["title"] for p in _call(rpc, "list_pages", {}, 4)["pages"]] == ["프로젝트", "테스트"]  # 바로 만들어짐
+    assert [p["title"] for p in _call(rpc, "list_pages", {}, 4)["pages"]] == ["프로젝트", "테스트", "맨위"]  # 바로 만들어짐
     assert "찾을 수 없습니다" in _call(rpc, "read_page", {"page_id": 99}, 5)["error"]
 
 
@@ -86,7 +86,7 @@ def test_trash_tool_only_with_permission(mcp, tmp_path):
     rpc = mcp(allow_edit=True, allow_delete=True)
     names = [t["name"] for t in rpc("tools/list", {}, 2)["result"]["tools"]]
     assert "trash_page" in names
-    project = _call(rpc, "create_page", {"title": "프로젝트", "markdown": ""}, 3)
+    project = _call(rpc, "create_page", {"title": "프로젝트", "markdown": "", "folder": True}, 3)
     note = _call(rpc, "create_page", {"title": "지울것", "markdown": "x", "parent_id": project["page_id"]}, 4)
     res = _call(rpc, "trash_page", {"page_id": note["page_id"], "summary": "요청"}, 5)
     assert res["applied"] is True and res["file"] == "프로젝트/지울것.md"

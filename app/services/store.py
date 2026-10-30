@@ -1,8 +1,8 @@
 """노트 저장소 — DB 없이 instance/notes/ 의 폴더와 .md 파일 (docs/storage.md).
 
-    notes/회사/                 프로젝트 = 맨 위 폴더
-    notes/회사/README.md        폴더 설명 (있으면 폴더 화면 위에 보임, 노트 목록에는 안 나옴)
-    notes/회사/회의록.md         노트
+    notes/메모.md               맨 위 노트
+    notes/회사/                 폴더 (그냥 디렉토리)
+    notes/회사/회의록.md         노트 (README.md 도 그냥 노트)
     notes/회사/2026-03/         폴더 안 폴더 (그냥 디렉토리)
     notes/회사/2026-03/3월.md    노트
     notes/.archive/<n>/…        보관함, notes/.trash/<n>/… 휴지통 (n = 옮길 때마다 새 칸, 원래 경로 그대로 아래에)
@@ -26,9 +26,9 @@ from datetime import datetime
 from urllib.parse import quote
 from difflib import SequenceMatcher
 
-from flask import current_app, g
+from flask import g
 
-from . import filestore, note_links
+from . import filestore, note_links, userdata
 from .markdown_renderer import join_markdown, split_markdown
 
 META_DIR = ".marknote"
@@ -36,12 +36,7 @@ STATUS_DIRS = {"archived": ".archive", "trashed": ".trash"}
 UNTITLED = "제목 없음"
 UNTITLED_RE = re.compile(rf"^{UNTITLED}(?: \(\d+\))?$")
 UNSAFE_NAME = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
-RESERVED = {"images"}  # 프로젝트 안 그림 폴더 이름
-README = "readme.md"  # 폴더 설명 파일 (대소문자 무시)
-
-
-def is_readme(path: str) -> bool:
-    return posixpath.basename(path).lower() == README
+RESERVED = {"images"}  # 그림 폴더 이름
 
 
 class StoreError(ValueError):
@@ -51,7 +46,7 @@ class StoreError(ValueError):
 # ---------- 경로 ----------
 
 def root() -> str:
-    path = current_app.config["NOTES_DIR"]
+    path = userdata.path("NOTES_DIR")
     os.makedirs(path, exist_ok=True)
     return path
 
@@ -83,7 +78,7 @@ class Block:
 
 
 class Page:
-    """폴더 또는 .md 파일(노트) 하나 (맨 위 폴더 = 프로젝트). 값은 훑은 시점 그대로 — 바꾸려면 store 함수를 쓴다."""
+    """폴더 또는 .md 파일(노트) 하나 값은 훑은 시점 그대로 — 바꾸려면 store 함수를 쓴다."""
 
     def __init__(self, id, path, kind, status, parent_id, position, created_at, updated_at, trashed_at, bucket):
         self.id = id
@@ -123,11 +118,6 @@ class Page:
     @property
     def parent(self):
         return get(self.parent_id) if self.parent_id is not None else None
-
-    @property
-    def readme(self) -> bool:
-        """폴더 설명 파일 (README.md)."""
-        return self.kind == "note" and is_readme(self.path)
 
     @property
     def file(self) -> str:
@@ -181,8 +171,9 @@ def _write_note(rel: str, body: str) -> None:
 _next_block_id = itertools.count(int(time.time() * 1000))
 # 편집기는 빈 줄이 든 블록을 잠시 나누지 않은 채 저장하기도 한다(입력 중 자동 저장) → 파일 본문이 기억한 것과 같으면
 # 기억한 블록 나눔을 그대로 쓴다
-_page_blocks: dict[int, tuple[str, list[int], list[str]]] = {}  # page_id -> (본문 해시, 블록 번호들, 내용)
-_block_page: dict[int, int] = {}  # block_id -> page_id
+# 계정마다 노트 폴더가 다르므로 (노트 폴더, page_id) 로 기억한다 — 같은 번호의 다른 계정 노트와 섞이지 않게
+_page_blocks: dict[tuple[str, int], tuple[str, list[int], list[str]]] = {}  # -> (본문 해시, 블록 번호들, 내용)
+_block_page: dict[int, tuple[str, int]] = {}  # block_id -> (노트 폴더, page_id)
 
 
 def _digest(source: str) -> str:
@@ -190,18 +181,19 @@ def _digest(source: str) -> str:
 
 
 def _remember(page_id: int, contents: list[str], ids: list[int]) -> list[Block]:
-    old = _page_blocks.get(page_id)
+    key = (root(), page_id)
+    old = _page_blocks.get(key)
     if old:
         for i in old[1]:
             _block_page.pop(i, None)
-    _page_blocks[page_id] = (_digest(join_markdown(contents)), ids, list(contents))
+    _page_blocks[key] = (_digest(join_markdown(contents)), ids, list(contents))
     for i in ids:
-        _block_page[i] = page_id
+        _block_page[i] = key
     return [Block(i, c) for i, c in zip(ids, contents)]
 
 
 def _block_ids(page_id: int, source: str) -> list[Block]:
-    cached = _page_blocks.get(page_id)
+    cached = _page_blocks.get((root(), page_id))
     if cached and cached[0] == _digest(source):
         return [Block(i, c) for i, c in zip(cached[1], cached[2])]
     contents = split_markdown(source)
@@ -216,14 +208,15 @@ def _block_ids(page_id: int, source: str) -> list[Block]:
 
 
 def block_owner(block_id: int) -> int | None:
-    return _block_page.get(block_id)
+    owner = _block_page.get(block_id)
+    return owner[1] if owner and owner[0] == root() else None
 
 
 def save_blocks(page: Page, blocks: list) -> list[Block]:
     """본문을 blocks 로 다시 쓴다. Block 은 번호 유지, 문자열은 새 블록. 저장된 블록 목록을 돌려준다."""
     if page.kind == "folder":
         if any((b.content if isinstance(b, Block) else b).strip() for b in blocks):
-            raise StoreError("폴더에는 내용을 쓸 수 없습니다. 안에 노트를 만들거나 README.md 에 설명을 쓰세요.")
+            raise StoreError("폴더에는 내용을 쓸 수 없습니다. 안에 노트를 만드세요.")
         return []
     contents = [b.content if isinstance(b, Block) else b for b in blocks]
     ids = [b.id if isinstance(b, Block) else next(_next_block_id) for b in blocks]
@@ -250,7 +243,7 @@ class Snapshot:
     def __init__(self, pages: list[Page]):
         self.pages = {p.id: p for p in pages}
         self.paths = {p.path: p for p in pages if p.status == "active"}
-        self.children: dict[int | None, list[Page]] = {}  # README.md 포함 (밖에서는 children() 로)
+        self.children: dict[int | None, list[Page]] = {}
         # 탐색기처럼 폴더 먼저
         for p in sorted(pages, key=lambda p: (p.kind != "folder", p.position, name_key(p.name), p.id)):
             self.children.setdefault(p.parent_id, []).append(p)
@@ -298,11 +291,14 @@ def _scan() -> Snapshot:
             elif name.lower().endswith(".md"):
                 found.append({"path": path, "kind": "note", "parent": dir_rel, "status": status, "bucket": None})
 
-    for name in _list(""):  # 맨 위에는 폴더(프로젝트)만 — 맨 위의 .md 파일은 무시
-        if name.startswith(".") or not os.path.isdir(_abs(name)):
+    for name in _list(""):  # 맨 위: 폴더와 노트(.md)
+        if name.startswith("."):
             continue
-        found.append({"path": name, "kind": "folder", "parent": None, "status": "active", "bucket": None})
-        walk(name, "active")
+        if os.path.isdir(_abs(name)):
+            found.append({"path": name, "kind": "folder", "parent": None, "status": "active", "bucket": None})
+            walk(name, "active")
+        elif name.lower().endswith(".md"):
+            found.append({"path": name, "kind": "note", "parent": None, "status": "active", "bucket": None})
 
     changed = False
     with filestore.locked(_index_path()):
@@ -312,7 +308,7 @@ def _scan() -> Snapshot:
             for bucket in _list(folder):
                 meta = buckets.get(bucket)
                 base = f"{folder}/{bucket}"
-                if meta is None or meta.get("status") != status:  # index 를 지웠으면 칸 안 맨 위 폴더를 프로젝트로
+                if meta is None or meta.get("status") != status:  # index 를 지웠으면 칸 안 맨 위 것을 맨 위로
                     tops = [n for n in _list(base) if os.path.isdir(_abs(f"{base}/{n}"))]
                     if not tops:
                         continue
@@ -389,22 +385,14 @@ def all_pages() -> list[Page]:
     return list(snapshot().pages.values())
 
 
-def children(page_id: int | None, status: str | None = None, readme: bool = False) -> list[Page]:
-    """폴더 안의 폴더·노트 (README.md 는 readme=True 일 때만)."""
+def children(page_id: int | None, status: str | None = None) -> list[Page]:
+    """폴더 안의 폴더·노트."""
     kids = snapshot().children.get(page_id, [])
-    return [p for p in kids if (status is None or p.status == status) and (readme or not p.readme)]
-
-
-def readme_of(folder: Page) -> Page | None:
-    """폴더 설명 파일 README.md."""
-    for p in snapshot().children.get(folder.id, []):
-        if p.readme and p.path.startswith(folder.path + "/"):
-            return p
-    return None
+    return [p for p in kids if status is None or p.status == status]
 
 
 def descendants(page: Page) -> list[Page]:
-    """폴더 안에 실제로 들어 있는 것 전부 (README.md 포함). 노트는 하위가 없다."""
+    """폴더 안에 실제로 들어 있는 것 전부. 노트는 하위가 없다."""
     if page.kind != "folder":
         return []
     result, frontier = [], [page.id]
@@ -450,9 +438,7 @@ def _next_position(index: dict, path: str) -> int:
 
 def _child_path(parent: Page | None, name: str, kind: str) -> str:
     if parent is None:
-        if kind != "folder":
-            raise StoreError("맨 위에는 폴더(프로젝트)만 만들 수 있습니다. 노트는 폴더 안에 만드세요.")
-        return name
+        return name + (".md" if kind == "note" else "")
     if parent.kind != "folder":
         raise StoreError("노트 안에는 만들 수 없습니다. 폴더 안에 만드세요.")
     if kind == "folder" and name.lower() in RESERVED:
@@ -461,9 +447,7 @@ def _child_path(parent: Page | None, name: str, kind: str) -> str:
 
 
 def create(parent: Page | None, title: str, markdown: str = "", position: int | None = None, kind: str = "note") -> Page:
-    """폴더 또는 노트(.md) 만들기. parent 가 없으면 프로젝트(맨 위 폴더). 이름 겹침 확인은 호출한 쪽에서."""
-    if parent is None:
-        kind = "folder"
+    """폴더 또는 노트(.md) 만들기. parent 가 없으면 맨 위. 이름 겹침 확인은 호출한 쪽에서."""
     if parent is not None and parent.status != "active":
         raise StoreError("보관함·휴지통의 폴더 안에는 만들 수 없습니다.")
     path = _child_path(parent, safe_name(title), kind)
@@ -504,7 +488,7 @@ def rename(page: Page, title: str) -> Page:
 
 
 def move(page: Page, parent: Page | None, position: int | None = None) -> Page:
-    """다른 폴더 안으로 (parent 가 None 이면 맨 위 = 프로젝트, 폴더만)."""
+    """다른 폴더 안으로 (parent 가 None 이면 맨 위)."""
     new = _child_path(parent, page.name, page.kind)
     if new != page.path:
         _move_files(page.path, new)
@@ -587,6 +571,9 @@ def _original_path(page: Page) -> str:
     return parts[2] if len(parts) == 3 else page.path
 
 
+original_path = _original_path
+
+
 def _drop_bucket(bucket: str) -> None:
     def fn(index):
         meta = index.get("buckets", {}).pop(bucket, None)
@@ -597,7 +584,7 @@ def _drop_bucket(bucket: str) -> None:
 
 
 def restore(page: Page, new_parent: Page | None, title: str) -> Page:
-    """보관·휴지통 칸에서 꺼내 new_parent 폴더 안으로 (None 이면 프로젝트로), 이름은 title."""
+    """보관·휴지통 칸에서 꺼내 new_parent 폴더 안으로 (None 이면 맨 위로), 이름은 title."""
     new = _child_path(new_parent, safe_name(title), page.kind)
     bucket = page.bucket
     _move_files(page.path, new)

@@ -43,12 +43,17 @@ def test_lockout_after_too_many_failures(client):
     assert res.status_code == 429
 
 
-def test_username_required_and_hash_login(app, client):
+def test_username_required_and_hash_login(tmp_path):
     from werkzeug.security import generate_password_hash
 
-    assert client.post("/login", data={"username": "other", "password": "temp"}).status_code == 401
-    app.config["LOGIN_PASSWORD_HASH"] = generate_password_hash("s3cret-pw")
-    assert client.post("/login", data={"username": "netnsecu", "password": "temp"}).status_code == 401  # 해시가 있으면 평문 암호 안 됨
+    from app import create_app
+    from conftest import make_config
+
+    # 처음 켤 때 .env.auth 의 해시로 관리자 계정을 만든다 (ACCESS_PASSWORD 평문은 쓰지 않음)
+    app = create_app(make_config(tmp_path / "data", LOGIN_PASSWORD_HASH=generate_password_hash("s3cret-pw")))
+    client = app.test_client()
+    assert client.post("/login", data={"username": "other", "password": "s3cret-pw"}).status_code == 401
+    assert client.post("/login", data={"username": "netnsecu", "password": "temp"}).status_code == 401
     res = client.post("/login", data={"username": "NetnSecu", "password": "s3cret-pw"})
     assert res.status_code == 302
 

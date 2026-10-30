@@ -1,10 +1,11 @@
-from flask import Blueprint, abort, current_app, jsonify, request, url_for
+from flask import Blueprint, abort, jsonify, request, url_for
 
 from ..services import page_tree as tree
 from ..services import store
 from ..services.attachments import ImageError, alt_text, save_image
 from ..services.markdown_renderer import split_markdown
 from ..services.page_tree import Page
+from ..services import userdata
 
 bp = Blueprint("api", __name__, url_prefix="/api")
 
@@ -21,7 +22,7 @@ def _page_view(page: Page) -> dict:
     return {**page.to_dict(), "path": tree.file_path(page), "abs_path": tree.abs_file_path(page)}
 
 
-# ---------- 페이지 (폴더 = 디렉토리, 맨 위 폴더 = 프로젝트, 노트 = .md 파일) ----------
+# ---------- 페이지 (폴더 = 디렉토리, 노트 = .md 파일 — 맨 위에도 둘 다) ----------
 
 def _check_name(parent_id, title, exclude_id=None, kind="note"):
     try:
@@ -30,12 +31,18 @@ def _check_name(parent_id, title, exclude_id=None, kind="note"):
         abort(409, description=str(err))
 
 
+@bp.get("/tree")
+def page_tree():
+    """탐색기 트리 (폴더·노트 전부)."""
+    return jsonify(nodes=tree.tree_json())
+
+
 @bp.post("/pages")
 def create_page():
     data = _json()
     parent = tree.get_or_404(data["parent_id"]) if data.get("parent_id") is not None else None
     title = str(data.get("title") or "").strip()[:200]
-    kind = "folder" if data.get("kind") == "folder" or parent is None else "note"
+    kind = "folder" if data.get("kind") == "folder" else "note"
     _check_name(parent.id if parent else None, title, kind=kind)
     try:
         page = tree.create_page(parent, title, kind=kind)
@@ -77,6 +84,21 @@ def _move(page: Page, parent_id) -> Page:
     return store.move(page, new_parent)
 
 
+@bp.post("/pages/<int:page_id>/copy")
+def copy_page(page_id):
+    """사이드바 복사·붙여넣기 (Ctrl+C → Ctrl+V): parent_id 폴더 안에 복사본 (없으면 맨 위)."""
+    page = tree.get_or_404(page_id)
+    if page.status != "active":
+        abort(400, description="보관함·휴지통에 있는 것은 복사할 수 없습니다.")
+    data = _json()
+    parent = tree.get_or_404(data["parent_id"]) if data.get("parent_id") is not None else None
+    try:
+        copied = tree.copy_page(page, parent)
+    except store.StoreError as err:
+        abort(400, description=str(err))
+    return jsonify(page=_page_view(copied), url=_page_url(copied)), 201
+
+
 def _redirect_after_leaving(parent_id) -> str:
     parent = store.get(parent_id) if parent_id is not None else None
     if parent is not None and parent.status == "active":
@@ -109,14 +131,14 @@ def delete_page(page_id):
     page = tree.get_or_404(page_id)
     if page.status != "trashed":
         abort(400, description="휴지통에 있는 페이지만 영구 삭제할 수 있습니다.")
-    tree.delete_permanently(page, current_app.config["UPLOAD_FOLDER"])
+    tree.delete_permanently(page, userdata.path("UPLOAD_FOLDER"))
     return jsonify(ok=True, redirect=url_for("pages.trash"))
 
 
 @bp.post("/trash/empty")
 def empty_trash():
     for page in tree.top_level_with_status("trashed"):
-        tree.delete_permanently(page, current_app.config["UPLOAD_FOLDER"])
+        tree.delete_permanently(page, userdata.path("UPLOAD_FOLDER"))
     return jsonify(ok=True, redirect=url_for("pages.trash"))
 
 
@@ -124,7 +146,7 @@ def empty_trash():
 
 def _editable(page: Page) -> Page:
     if tree.is_folder(page):
-        abort(400, description="폴더에는 내용을 쓸 수 없습니다. 안에 노트를 만들거나 README.md 에 설명을 쓰세요.")
+        abort(400, description="폴더에는 내용을 쓸 수 없습니다. 안에 노트를 만드세요.")
     return page
 
 
@@ -225,7 +247,7 @@ def upload():
     if file is None:
         abort(400, description="파일이 없습니다.")
     try:
-        file_id = save_image(file.read(), file.filename, current_app.config["UPLOAD_FOLDER"])
+        file_id = save_image(file.read(), file.filename, userdata.path("UPLOAD_FOLDER"))
     except ImageError as err:
         abort(400, description=str(err))
     return jsonify(id=file_id, url=url_for("files.get_file", file_id=file_id), name=alt_text(file.filename)), 201

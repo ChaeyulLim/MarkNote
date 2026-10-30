@@ -1,13 +1,13 @@
 """마크다운 내보내기(.md / .zip)와 가져오기 — 폴더 구조 그대로 (docs/storage.md "가져오기 · 내보내기").
 
 zip 구조 (notes/ 와 같은 모양):
-    회사/                     ← 폴더 (맨 위 = 프로젝트)
-    회사/README.md            ← 폴더 설명
+    메모.md                   ← 맨 위 노트
+    회사/                     ← 폴더
     회사/회의록.md             ← 노트 (순수 본문)
     회사/2026-03/3월 회의.md
     images/<uuid>.png         ← 각 .md 에서 상대 경로로 참조
 
-노트끼리 링크는 상대 경로라 그대로 동작한다. 가져올 때 노션 zip 의 "X.md" + "X/" 짝은 폴더 X + 그 안 README.md 로.
+노트끼리 링크는 상대 경로라 그대로 동작한다. 가져올 때 노션 zip 의 "X.md" + "X/" 짝은 폴더 X + 그 안 노트 X.md 로.
 """
 
 import io
@@ -200,13 +200,13 @@ class _Node:
         self.kind = kind
         self.title = title
         self.children: list["_Node"] = []
-        self.readme: str | None = None  # 폴더 설명으로 쓸 zip 안 .md
+        self.pair: str | None = None  # 노션 짝 "X.md" (폴더 X 안에 같은 이름 노트로)
         self.page: Page | None = None
-        self.readme_page: Page | None = None
+        self.pair_page: Page | None = None
 
 
 def _build(entries: dict[str, bytes], dirs: set[str]) -> tuple[list[_Node], dict[str, _Node]]:
-    """zip 안 경로들 → 폴더·노트 나무. 노션 "X.md" + "X/" 짝은 폴더 X + README."""
+    """zip 안 경로들 → 폴더·노트 나무. 노션 "X.md" + "X/" 짝은 폴더 X + 그 안 노트 X."""
     md_paths = [p for p in entries if _ext(p) in TEXT_EXTS]
     folders = set(dirs)
     for p in [*md_paths, *[p for p in entries if _ext(p) in IMAGE_EXTS]]:
@@ -229,21 +229,16 @@ def _build(entries: dict[str, bytes], dirs: set[str]) -> tuple[list[_Node], dict
         by_src[d] = _Node(d, "folder", _clean_name(posixpath.basename(d)) or store.UNTITLED)
     for p in sorted(md_paths):
         stem = posixpath.splitext(p)[0]
-        if stem in by_src and by_src[stem].readme is None and not store.is_readme(p):
-            by_src[stem].readme = p  # 노션 짝: X.md → X/README.md
+        if stem in by_src and by_src[stem].kind == "folder" and by_src[stem].pair is None:
+            by_src[stem].pair = p  # 노션 짝: X.md → X/X.md
             by_src[p] = by_src[stem]
-            continue
-        parent = by_src.get(posixpath.dirname(p))
-        if parent is not None and store.is_readme(p) and parent.readme is None:
-            parent.readme = p
-            by_src[p] = parent
             continue
         by_src[p] = _Node(p, "note", _clean_name(posixpath.splitext(posixpath.basename(p))[0]) or store.UNTITLED)
 
     roots: list[_Node] = []
     for src, node in by_src.items():
         if node.src != src:
-            continue  # README 로 쓰인 .md
+            continue  # 노션 짝 .md
         parent = by_src.get(posixpath.dirname(src))
         (parent.children if parent is not None else roots).append(node)
     return roots, by_src
@@ -254,7 +249,7 @@ def import_markdown(
 ) -> list[Page]:
     """파일들을 폴더·노트로 만든다. 만들어진 맨 위 폴더·노트 목록을 돌려준다.
 
-    parent 가 없으면 맨 위 폴더는 프로젝트, 맨 위 낱개 노트는 "분류 안 됨" 프로젝트로.
+    parent 가 없으면 맨 위에 (폴더·노트 모두).
     같은 이름이 있으면: on_conflict 가 없으면 ImportConflict (아무것도 만들지 않음),
     "rename" 이면 "제목 (2)" 로, "overwrite" 면 기존 것을 휴지통으로 보내고 그 자리에 넣는다.
     """
@@ -265,20 +260,10 @@ def import_markdown(
         parent = parent.parent
     roots, by_src = _build(entries, dirs)
 
-    inbox = tree.name_conflict(None, tree.INBOX_TITLE, kind="folder") if parent is None else None
-
-    def owner_of(node: _Node) -> Page | None:
-        if parent is not None or node.kind == "folder":
-            return parent
-        return inbox
-
     # 0) 대상 폴더에 이미 있는 이름인지 먼저 확인
     existing: dict[int, Page] = {}
     for node in roots:
-        owner = owner_of(node)
-        if parent is None and node.kind == "note" and owner is None:
-            continue  # "분류 안 됨" 이 아직 없음
-        found = tree.name_conflict(owner.id if owner else None, node.title, kind=node.kind)
+        found = tree.name_conflict(parent.id if parent else None, node.title, kind=node.kind)
         if found is not None:
             existing[id(node)] = found
     if existing and on_conflict not in ON_CONFLICT:
@@ -286,16 +271,14 @@ def import_markdown(
             {"title": n.title, "existing_id": existing[id(n)].id, "existing_title": existing[id(n)].display_title}
             for n in roots if id(n) in existing
         ])
-    if parent is None and inbox is None and any(n.kind == "note" for n in roots):
-        inbox = tree.inbox()
 
     # 1) 폴더·노트 만들기 (가져오는 것끼리 이름이 겹치면 "(2)")
     def create(node: _Node, owner: Page | None, position=None):
         node.page = tree.create_page(owner, node.title, unique=True, position=position, kind=node.kind)
         for child in node.children:
             create(child, node.page)
-        if node.readme:
-            node.readme_page = store.create(node.page, "README")
+        if node.pair:
+            node.pair_page = tree.create_page(node.page, node.title, unique=True, position=0)
 
     for node in roots:
         old = existing.get(id(node)) if on_conflict == "overwrite" else None
@@ -303,7 +286,7 @@ def import_markdown(
         if old is not None and old.status != "trashed":
             position = old.position
             tree.trash(old)
-        create(node, owner_of(node), position)
+        create(node, parent, position)
 
     # 2) 본문: 상대 링크는 새 위치 기준으로, 그림은 업로드로
     store.invalidate()
@@ -315,9 +298,9 @@ def import_markdown(
             new_path[src] = page.path + ("/" if node.kind == "folder" else "")
             if node.kind == "note":
                 notes.append((src, page))
-        else:  # README 로 쓰인 .md (노션 짝이면 링크는 그 폴더로)
-            page = store.get(node.readme_page.id)
-            new_path[src] = page.path if store.is_readme(src) else store.get(node.page.id).path + "/"
+        else:  # 노션 짝 .md → 폴더 안 같은 이름 노트
+            page = store.get(node.pair_page.id)
+            new_path[src] = page.path
             notes.append((src, page))
 
     def mapping(target: str) -> str | None:

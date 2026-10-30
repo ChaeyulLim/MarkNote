@@ -7,13 +7,11 @@ import os
 from datetime import datetime
 from types import SimpleNamespace
 
-from flask import current_app
-
-from . import filestore
+from . import filestore, userdata
 
 
 def _dir(kind: str) -> str:
-    path = os.path.join(current_app.config["AI_EDITS_DIR"], kind)
+    path = os.path.join(userdata.path("AI_EDITS_DIR"), kind)
     os.makedirs(path, exist_ok=True)
     return path
 

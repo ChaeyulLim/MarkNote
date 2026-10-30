@@ -41,15 +41,15 @@ def test_read_note(ctx):
     assert info["markdown"] == "소개\n\n[상세](상세.md)" and info["kind"] == "note"
 
 
-def test_read_project_returns_every_note_inside(ctx):
-    """"회사 프로젝트 확인해줘" → 폴더를 읽으면 안의 노트 전부 (하위 폴더까지, README 먼저)."""
+def test_read_folder_returns_every_note_inside(ctx):
+    """"회사 폴더 확인해줘" → 폴더를 읽으면 안의 노트 전부 (하위 폴더까지). README.md 도 그냥 노트."""
     project = make_page(None, "회사")
-    store.replace_source(tree.create_readme(project), "회사 소개")
+    make_page(project, "README", "회사 소개")
     make_page(project, "회의록", "안건 {{비밀}}")
     sub = folder(project, "2026-03")
     make_page(sub, "3월", "3월 내용")
     info = note_tools.read_page(project.id)
-    assert info["kind"] == "folder" and [s["title"] for s in info["sub_pages"]] == ["2026-03", "회의록"]
+    assert info["kind"] == "folder" and [s["title"] for s in info["sub_pages"]] == ["2026-03", "README", "회의록"]
     assert [n["file"] for n in info["notes"]] == ["회사/README.md", "회사/회의록.md", "회사/2026-03/3월.md"]
     assert info["notes"][0]["markdown"] == "회사 소개" and info["notes"][2]["markdown"] == "3월 내용"
     assert "비밀" not in info["notes"][1]["markdown"]  # 비공개는 가림

@@ -53,7 +53,7 @@ def test_sidebar_tabs(auth_client):
     decks_html = auth_client.get("/decks").get_data(as_text=True)
     assert "사이드바에 보임" in decks_html and "새 프레젠테이션" in decks_html
     notes_html = auth_client.get("/").get_data(as_text=True)
-    assert "새 프로젝트" in notes_html and 'class="side-tab active"' in notes_html
+    assert 'data-explorer="server"' in notes_html and 'id="explorer-data"' in notes_html and 'class="side-tab active"' in notes_html
 
 
 def test_rename(auth_client):

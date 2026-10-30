@@ -96,6 +96,17 @@
   document.addEventListener("mousedown", (e) => {
     if (!menu.hidden && !menu.contains(e.target)) closeMenu();
   });
+  document.addEventListener(
+    "keydown",
+    (e) => {
+      if (e.key === "Escape" && !menu.hidden) {
+        e.preventDefault();
+        e.stopPropagation();
+        closeMenu();
+      }
+    },
+    true
+  );
   window.addEventListener("blur", closeMenu);
   window.addEventListener("resize", closeMenu);
   document.addEventListener("scroll", closeMenu, true);
@@ -135,12 +146,33 @@
   const K = isMac ? "⌘" : "Ctrl";
   const SHORTCUTS = [
     ["전체", [
-      [`${K}+P`, "페이지 빠른 이동 · 검색"],
-      [`${K}+Alt+N`, "새 프로젝트 (최상위 폴더)"],
+      [`${K}+Z / ${K}+Y`, "되돌리기 / 다시 실행 (블록 편집·삭제·이동, 휴지통으로 옮기기, AI 수정)"],
+      ["Delete", "고른 블록 삭제 · 탐색기 항목 휴지통으로"],
+      [`${K}+A`, "지금 칸 전체 선택 (탐색기 = 항목 전부, 노트 본문 = 블록 전부)"],
+      [`${K}+P`, "노트 빠른 이동 · 검색 (없는 제목이면 새 노트)"],
+      [`${K}+Alt+N`, "새 파일 (탐색기에서 고른 폴더 안에 이름 입력)"],
       [`F2 / ${K}+J`, "AI 도우미 열기/닫기 (오른쪽 서랍, 프레젠테이션에서는 F2 만)"],
       [`${K}+\\`, "사이드바 접기/펴기"],
       [`${K}+S`, "저장 (편집 내용 즉시 저장)"],
       [`${K}+/`, "단축키 보기"],
+    ]],
+    ["탐색기 (VS Code 처럼)", [
+      ["↑ / ↓ · Home / End", "위아래 항목 · 처음 / 끝 (Shift = 범위로 고르기)"],
+      ["→ / ←", "펼치기(펼쳐져 있으면 첫 항목) / 접기(접혀 있으면 상위 폴더)"],
+      ["Enter", "파일 열기 · 폴더 펼치기/접기"],
+      [`${K}+C / ${K}+X → ${K}+V`, "복사 / 잘라내기 → 고른 폴더 안(파일을 골랐으면 그 옆)에 붙여넣기"],
+      ["Delete", "휴지통으로 (되돌리기 가능)"],
+      [`클릭 · ${K}+클릭 · Shift+클릭`, "열기 / 하나씩 더하기 / 범위로 고르기"],
+      [`끌어 놓기 (${K} 누르면 복사)`, "폴더 안으로 · 빈 곳 = 맨 위로"],
+      ["우클릭 → 이름 바꾸기", "트리 안에서 바로 입력 (Enter 저장, Esc 취소)"],
+    ]],
+    ["블록 고르기 (편집 중이 아닐 때)", [
+      ["블록 왼쪽 손잡이 클릭", "블록 고르기 (Shift = 범위, Ctrl = 하나씩 더하기)"],
+      ["Esc", "편집을 마치고 그 블록 고르기 / 고르기 풀기"],
+      ["↑ / ↓ (Shift)", "위·아래 블록 고르기 (범위 넓히기)"],
+      ["Enter", "고른 블록 편집"],
+      [`${K}+C / ${K}+X / ${K}+V`, "고른 블록 복사 / 잘라내기 / 그 아래에 붙여넣기"],
+      [`${K}+Shift+↑ / ↓`, "고른 블록째 위·아래로 옮기기"],
     ]],
     ["블록 편집 중", [
       [`${K}+B / ${K}+I`, "굵게 / 기울임"],
@@ -157,7 +189,7 @@
       ["Esc", "편집 완료"],
     ]],
     ["마우스", [
-      ["우클릭", "블록 · 사이드바 페이지 메뉴"],
+      ["우클릭", "블록 · 탐색기 항목 · 빈 곳마다 다른 메뉴"],
       ["Shift+우클릭", "브라우저 기본 메뉴"],
     ]],
   ];
@@ -190,28 +222,22 @@
     box.focus();
   }
 
-  // 사이드바 트리에 있는 (활성) 페이지 목록
+  // 탐색기에 있는 폴더·노트 목록
   function sidebarPages() {
-    return [...document.querySelectorAll(".tree-node")].map((node) => {
-      const path = [];
-      let cur = node;
-      while (cur) {
-        path.unshift(cur.querySelector(":scope > .tree-row .tree-title").textContent);
-        cur = cur.parentElement.closest(".tree-node");
-      }
-      return {
-        id: Number(node.dataset.id),
-        iconHtml: node.querySelector(":scope > .tree-row .tree-icon").innerHTML,
-        title: path.at(-1),
-        path: path.slice(0, -1).join(" / "),
-      };
-    });
+    return (window.explorer?.items() || []).map((item) => ({
+      key: item.key,
+      url: item.url,
+      kind: item.kind,
+      iconHtml: window.pageIconHtml(item.kind),
+      title: item.name,
+      path: item.trail,
+    }));
   }
 
   function openSwitcher() {
     const { box, close } = openModal("ui-switcher");
     box.innerHTML =
-      '<input class="ui-switcher-input" placeholder="페이지 제목으로 이동… (새 제목이면 만들기)" autocomplete="off">' +
+      `<input class="ui-switcher-input" placeholder="노트 제목으로 이동… (새 제목이면 맨 위에 새 노트)" autocomplete="off">` +
       '<div class="ui-switcher-list" role="listbox"></div>';
     const input = box.querySelector("input");
     const list = box.querySelector(".ui-switcher-list");
@@ -224,20 +250,13 @@
       results = pages
         .filter((p) => !q || p.title.toLowerCase().includes(q) || p.path.toLowerCase().includes(q))
         .slice(0, 50)
-        .map((p) => ({ ...p, go: () => (location.href = `/p/${p.id}`) }));
+        .map((p) => ({ ...p, go: () => (p.kind === "folder" ? window.explorer.reveal(p.key) : window.go(p.url)) }));
       if (q) {
         results.push({
           iconHtml: icon("plus"),
-          title: `새 프로젝트 만들기: "${input.value.trim()}"`,
-          path: "",
-          go: async () => {
-            try {
-              const res = await api("POST", "/api/pages", { title: input.value.trim() });
-              location.href = res.url;
-            } catch (err) {
-              alert(err.message); // 같은 이름의 프로젝트가 있을 때
-            }
-          },
+          title: `새 노트 만들기: "${input.value.trim()}"`,
+          path: "맨 위",
+          go: () => window.explorer.commands.create(null, "note", input.value.trim()).catch((err) => alert(err.message)), // 같은 이름이 있으면 알림
         });
       }
       index = Math.min(index, Math.max(results.length - 1, 0));
@@ -254,7 +273,7 @@
           return item;
         })
       );
-      if (!results.length) list.innerHTML = '<p class="muted ui-switcher-empty">페이지가 없습니다.</p>';
+      if (!results.length) list.innerHTML = '<p class="muted ui-switcher-empty">노트가 없습니다.</p>';
       list.querySelector(".active")?.scrollIntoView({ block: "nearest" });
     }
 
@@ -288,6 +307,7 @@
   // ---------- 사이드바 접기 ----------
   const SIDEBAR_KEY = "marknote.sidebarCollapsed";
   function setSidebarCollapsed(collapsed) {
+    if (!collapsed && !document.body.classList.contains("sidebar-collapsed")) return;
     document.body.classList.toggle("sidebar-collapsed", collapsed);
     try {
       localStorage.setItem(SIDEBAR_KEY, collapsed ? "1" : "0");
@@ -308,11 +328,14 @@
   reopen.addEventListener("click", () => setSidebarCollapsed(false));
   document.body.appendChild(reopen);
 
+  window.setSidebarCollapsed = setSidebarCollapsed;
+
   // ---------- 전역 단축키 ----------
-  async function newPage() {
-    if (window.flushEditor) await window.flushEditor();
-    const res = await api("POST", "/api/pages", {});
-    location.href = res.url;
+  // 새 파일 = 탐색기에서 고른 폴더 안(없으면 맨 위)에 이름 칸 (내 PC 화면이면 내 PC 탐색기)
+  function newFile() {
+    if (!window.explorer) return;
+    setSidebarCollapsed(false);
+    window.explorer.run("new-file");
   }
 
   document.addEventListener("keydown", (e) => {
@@ -320,7 +343,7 @@
     if (!mod(e)) return;
     let handled = true;
     if (keyIs(e, "p") && !e.shiftKey && !e.altKey) openSwitcher();
-    else if (keyIs(e, "n") && e.altKey) newPage().catch((err) => alert(err.message));
+    else if (keyIs(e, "n") && e.altKey) newFile();
     // 프레젠테이션 편집기에서는 Ctrl+J = 양쪽 맞춤 (PowerPoint), AI 도우미는 F2
     else if (keyIs(e, "j") && !e.shiftKey && !document.querySelector(".pp-app")) document.querySelector("[data-chat-toggle]")?.click();
     else if (keyIs(e, "\\")) setSidebarCollapsed(!document.body.classList.contains("sidebar-collapsed"));
@@ -328,66 +351,6 @@
     else if (keyIs(e, "s") && !e.shiftKey) window.flushEditor?.(); // 브라우저의 "페이지 저장" 대신
     else handled = false;
     if (handled) e.preventDefault();
-  });
-
-  // ---------- 사이드바 트리 우클릭 ----------
-  providers.push((e) => {
-    const node = e.target.closest(".tree-node");
-    if (!node || !e.target.closest(".tree-row")) return null;
-    const id = Number(node.dataset.id);
-    const title = node.querySelector(":scope > .tree-row .tree-title").textContent;
-    const run = (action) => async () => {
-      if (window.flushEditor) await window.flushEditor();
-      const res = await api("POST", `/api/pages/${id}/${action}`);
-      // 지금 보는 페이지(또는 그 상위)를 옮겼으면 안내된 곳으로, 아니면 새로고침
-      const current = window.editorPageId;
-      const affected = current === id || [...node.querySelectorAll(".tree-node")].some((n) => Number(n.dataset.id) === current);
-      if (affected) location.href = res.redirect;
-      else location.reload();
-    };
-    const isFolder = node.dataset.kind === "folder";
-    const href = node.querySelector(":scope > .tree-row .tree-link").href;
-    const add = (kind) => async () => {
-      const res = await api("POST", "/api/pages", { parent_id: id, kind });
-      location.href = res.url;
-    };
-    return [
-      { label: "열기", icon: "open", action: () => (location.href = href) },
-      { label: "새 탭에서 열기", icon: "external", action: () => window.open(href, "_blank") },
-      { label: "파일 위치 복사", icon: "copy", action: () => window.copyToClipboard(node.dataset.abs || node.dataset.path) },
-      "sep",
-      ...(isFolder
-        ? [
-            { label: "노트 추가", icon: "file-plus", action: add("note") },
-            { label: "폴더 추가", icon: "folder-plus", action: add("folder") },
-          ]
-        : []),
-      {
-        label: "이름 바꾸기",
-        icon: "type",
-        action: async () => {
-          const next = prompt("새 이름", title === "제목 없음" ? "" : title);
-          if (next === null) return;
-          const res = await api("PATCH", `/api/pages/${id}`, { title: next });
-          document
-            .querySelectorAll(`[data-title-for="${id}"]`)
-            .forEach((n) => (n.textContent = res.page.display_title)); // 제목 텍스트만 (아이콘은 별도 요소)
-          window.updatePagePath(id, res.path, res.abs_path, res.url);
-          if (isFolder) {
-            // 안의 것들 주소도 바뀜 → 지금 페이지를 번호 주소로 다시 열면 새 경로로 보내 준다
-            const current = JSON.parse(document.getElementById("page-data")?.textContent || "{}").page;
-            location.href = current ? `/p/${current.id}` : location.href;
-          }
-          else if (window.editorPageId === id) window.editorReload?.();
-        },
-      },
-      isFolder
-        ? { label: "폴더째 내려받기 (.zip)", icon: "package", action: () => (location.href = `/export/page/${id}.zip`) }
-        : { label: "Markdown 다운로드", icon: "download", action: () => (location.href = `/export/page/${id}.md`) },
-      "sep",
-      { label: "보관", icon: "archive", action: run("archive") },
-      { label: "휴지통으로 이동", icon: "trash", danger: true, action: run("trash") },
-    ];
   });
 
   window.openShortcutHelp = openHelp;
@@ -398,48 +361,28 @@
 
   // ---------- 빈 공간 우클릭: 영역·화면마다 다른 메뉴 ----------
   const view = () => document.querySelector(".content")?.dataset.view || "";
-  const go = (url) => () => (location.href = url);
+  const go = (url) => () => (window.go(url));
   const clickEl = (selector) => () => document.querySelector(selector)?.click();
   const commonItems = () => [
-    { label: "페이지 빠른 이동", icon: "search", hint: `${K}+P`, action: openSwitcher },
+    { label: "노트 빠른 이동", icon: "search", hint: `${K}+P`, action: openSwitcher },
     { label: "AI 도우미", icon: "sparkles", hint: `${K}+J`, action: clickEl("[data-chat-toggle]") },
     { label: "단축키 보기", icon: "keyboard", hint: `${K}+/`, action: openHelp },
   ];
-  const newPageItem = () => ({
-    label: "새 프로젝트",
-    icon: "folder-plus",
-    hint: `${K}+Alt+N`,
-    action: () => newPage().catch((err) => alert(err.message)),
-  });
+  const newFileItems = () =>
+    window.explorer
+      ? [
+          { label: "새 파일", icon: "file-plus", hint: `${K}+Alt+N`, action: newFile },
+          { label: "새 폴더", icon: "folder-plus", action: () => (setSidebarCollapsed(false), window.explorer.run("new-folder")) },
+        ]
+      : [];
   window.menuCommonItems = commonItems;
 
-  function setAllTreeNodes(open) {
-    const ids = [];
-    document.querySelectorAll(".tree-node").forEach((node) => {
-      if (!node.querySelector(":scope > .tree-list")) return;
-      node.classList.toggle("open", open);
-      if (open) ids.push(node.dataset.id);
-    });
-    try {
-      localStorage.setItem("marknote.openNodes", JSON.stringify(ids));
-    } catch {
-      // 저장소 사용 불가
-    }
-  }
-
-  // 사이드바 빈 곳 (페이지 행은 위의 트리 메뉴가 먼저 처리)
+  // 사이드바의 탐색기 밖 빈 곳 (탐색기 안은 explorer.js 가 먼저 처리)
   fallbacks.push((e) => {
     if (!e.target.closest(".sidebar")) return null;
-    const hasTree = Boolean(document.querySelector(".tree-node .tree-list"));
     return [
-      newPageItem(),
-      { label: "페이지 빠른 이동", icon: "search", hint: `${K}+P`, action: openSwitcher },
-      "sep",
-      { label: "모두 펼치기", icon: "expand", disabled: !hasTree, action: () => setAllTreeNodes(true) },
-      { label: "모두 접기", icon: "collapse", disabled: !hasTree, action: () => setAllTreeNodes(false) },
-      "sep",
-      { label: "가져오기 (.md / .zip)", icon: "import", action: clickEl('.sidebar [data-action="import"]') },
-      { label: "전체 내보내기", icon: "package", action: go("/export/all.zip") },
+      ...newFileItems(),
+      { label: "노트 빠른 이동", icon: "search", hint: `${K}+P`, action: openSwitcher },
       "sep",
       { label: "보관함", icon: "archive", action: go("/archive") },
       { label: "휴지통", icon: "trash", action: go("/trash") },
@@ -478,14 +421,14 @@
     switch (view()) {
       case "home":
         return [
-          newPageItem(),
+          ...newFileItems(),
           { label: "가져오기 (.md / .zip)", icon: "import", action: clickEl('.sidebar [data-action="import"]') },
           { label: "전체 내보내기", icon: "package", action: go("/export/all.zip") },
           "sep",
           ...commonItems(),
         ];
       case "archive":
-        return [{ label: "휴지통 보기", icon: "trash", action: go("/trash") }, newPageItem(), "sep", ...commonItems()];
+        return [{ label: "휴지통 보기", icon: "trash", action: go("/trash") }, "sep", ...commonItems()];
       case "trash": {
         const empty = document.querySelector('[data-action="empty-trash"]');
         return [
@@ -498,12 +441,12 @@
       case "settings":
         return [
           { label: "설정 저장", icon: "save", action: () => document.querySelector(".settings-form")?.requestSubmit() },
-          { label: "설정 되돌리기 (저장 전 상태)", icon: "undo", action: () => location.reload() },
+          { label: "설정 되돌리기 (저장 전 상태)", icon: "undo", action: () => window.reloadPage() },
           "sep",
           ...commonItems(),
         ];
       default:
-        return [newPageItem(), "sep", ...commonItems()];
+        return [...newFileItems(), "sep", ...commonItems()];
     }
   });
 })();

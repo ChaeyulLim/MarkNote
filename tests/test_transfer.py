@@ -39,7 +39,7 @@ def _children(app, page_id):
 
 
 def test_download_single_markdown(auth_client):
-    project = auth_client.post("/api/pages", json={"title": "회사"}).get_json()["page"]
+    project = auth_client.post("/api/pages", json={"title": "회사", "kind": "folder"}).get_json()["page"]
     page = auth_client.post("/api/pages", json={"title": "회의록", "parent_id": project["id"]}).get_json()["page"]
     auth_client.put(f"/api/pages/{page['id']}/source", json={"markdown": "본문\n\n- [ ] 할 일\n\n[일정](일정.md)"})
 
@@ -52,26 +52,24 @@ def test_download_single_markdown(auth_client):
     assert res.status_code == 302 and res.headers["Location"].endswith(f"/export/page/{project['id']}.zip")
 
 
-def test_import_single_markdown_goes_to_inbox(auth_client):
+def test_import_single_markdown_goes_to_top(auth_client):
     md = "---\nicon: 🚀\n---\n# whatever\n\n첫 문단\n\n둘째 문단\n"
     res = _import(auth_client, [("whatever.md", md.encode())])
     assert res.status_code == 201
     page = res.get_json()["pages"][0]
     assert page["title"] == "whatever" and page["kind"] == "note"
     assert _source(auth_client, page["id"]) == "첫 문단\n\n둘째 문단"  # 앞머리·파일 이름과 같은 # 제목은 뺌
-    # 맨 위에 낱개 .md 를 가져오면 "분류 안 됨" 프로젝트 안으로
-    inbox = auth_client.patch(f"/api/pages/{page['parent_id']}", json={}).get_json()["page"]
-    assert inbox["title"] == "분류 안 됨" and inbox["parent_id"] is None
+    assert page["parent_id"] is None  # 맨 위에 그대로 (탐색기처럼)
 
 
-def test_import_folder_becomes_project(app, auth_client):
+def test_import_folder_keeps_readme_as_note(app, auth_client):
     archive = _zip({"회사/README.md": "회사 설명", "회사/회의록.md": "# 회의록\n\n내용", "회사/2026/일정.md": "일정"})
     res = _import(auth_client, [("backup.zip", archive)])
     root = res.get_json()["pages"][0]
     assert root["title"] == "회사" and root["parent_id"] is None and root["kind"] == "folder"
-    assert _children(app, root["id"]).keys() == {"2026", "회의록"}  # README 는 설명
-    html = auth_client.get(root["url"]).get_data(as_text=True)
-    assert "회사 설명" in html and "회의록.md" in html and "2026/" in html
+    kids = _children(app, root["id"])
+    assert kids.keys() == {"2026", "README", "회의록"}  # README.md 도 그냥 노트
+    assert _source(auth_client, kids["README"]) == "회사 설명"
 
 
 def test_import_uses_filename_and_reads_cp949(auth_client):
@@ -82,7 +80,7 @@ def test_import_uses_filename_and_reads_cp949(auth_client):
 
 
 def test_import_into_folder(auth_client):
-    project = auth_client.post("/api/pages", json={"title": "프로젝트"}).get_json()["page"]
+    project = auth_client.post("/api/pages", json={"title": "프로젝트", "kind": "folder"}).get_json()["page"]
     res = _import(auth_client, [("a.md", b"# A"), ("b.md", b"B")], parent_id=project["id"])
     pages = res.get_json()["pages"]
     assert [p["title"] for p in pages] == ["a", "b"]
@@ -94,7 +92,7 @@ def test_import_into_folder(auth_client):
 
 
 def test_zip_roundtrip_keeps_folders_links_and_images(app, auth_client):
-    project = auth_client.post("/api/pages", json={"title": "프로젝트"}).get_json()["page"]
+    project = auth_client.post("/api/pages", json={"title": "프로젝트", "kind": "folder"}).get_json()["page"]
     sub = auth_client.post("/api/pages", json={"title": "설계", "parent_id": project["id"], "kind": "folder"}).get_json()["page"]
     note = auth_client.post("/api/pages", json={"title": "API", "parent_id": sub["id"]}).get_json()["page"]
     other = auth_client.post("/api/pages", json={"title": "목차", "parent_id": project["id"]}).get_json()["page"]
@@ -145,20 +143,20 @@ def test_import_notion_style_zip(app, auth_client):
     res = _import(auth_client, [("Export.zip", outer)])
     assert res.status_code == 201
     root = res.get_json()["pages"][0]
-    assert root["title"] == "Export-123"  # 바깥 폴더가 프로젝트
-    home_id = _children(app, root["id"])["Home"]  # Home.md + Home/ → 폴더 Home + README.md
-    assert _children(app, home_id).keys() == {"Child", "Orphan"}
+    assert root["title"] == "Export-123"  # 바깥 폴더
+    home_id = _children(app, root["id"])["Home"]  # Home.md + Home/ → 폴더 Home + 그 안 노트 Home.md
+    assert _children(app, home_id).keys() == {"Home", "Child", "Orphan"}
     from app.services import page_tree as tree
     from app.services import store
 
     with app.app_context():
-        readme = tree.readme(store.get(home_id))
+        readme = tree.name_conflict(home_id, "Home", kind="note")
         child = tree.name_conflict(home_id, "Child")
         readme_src, child_src = tree.page_source(readme), tree.page_source(child)
     blocks = readme_src.split("\n\n")
     assert blocks[0] == "[Child](Child.md)"  # 노션 번호 빠진 새 이름으로
     assert blocks[1].startswith("![](/files/")
-    assert child_src == "내용 [위로](./)"  # Home.md 는 폴더 Home 이 됨 → 그 폴더를 가리킴
+    assert child_src == "내용 [위로](Home.md)"  # Home.md 는 폴더 Home 안 노트 Home.md
 
 
 def test_import_inline_link_to_other_document(app, auth_client):
@@ -181,8 +179,8 @@ def test_import_rejects_zip_without_markdown(auth_client):
 
 
 def test_export_all(auth_client):
-    auth_client.post("/api/pages", json={"title": "하나"})
-    auth_client.post("/api/pages", json={"title": "둘"})
+    auth_client.post("/api/pages", json={"title": "하나", "kind": "folder"})
+    auth_client.post("/api/pages", json={"title": "둘", "kind": "folder"})
     res = auth_client.get("/export/all.zip")
     names = zipfile.ZipFile(io.BytesIO(res.get_data())).namelist()
     assert sorted(names) == ["둘/", "하나/"]  # 폴더 구조 그대로
@@ -191,7 +189,7 @@ def test_export_all(auth_client):
 # ---------- 같은 이름 ----------
 
 def test_import_conflict_overwrite_moves_old_to_trash(app, auth_client):
-    parent = auth_client.post("/api/pages", json={"title": "프로젝트"}).get_json()["page"]
+    parent = auth_client.post("/api/pages", json={"title": "프로젝트", "kind": "folder"}).get_json()["page"]
     old = auth_client.post("/api/pages", json={"title": "회의록", "parent_id": parent["id"]}).get_json()["page"]
     auth_client.post("/api/pages", json={"title": "다른 노트", "parent_id": parent["id"]})
 
@@ -216,9 +214,9 @@ def test_import_conflict_overwrite_moves_old_to_trash(app, auth_client):
 
 
 def test_duplicate_names_in_same_folder(auth_client):
-    a = auth_client.post("/api/pages", json={"title": "개발"}).get_json()["page"]
-    assert auth_client.post("/api/pages", json={"title": " 개발 "}).status_code == 409  # 프로젝트끼리
-    b = auth_client.post("/api/pages", json={"title": "디자인"}).get_json()["page"]
+    a = auth_client.post("/api/pages", json={"title": "개발", "kind": "folder"}).get_json()["page"]
+    assert auth_client.post("/api/pages", json={"title": " 개발 ", "kind": "folder"}).status_code == 409  # 프로젝트끼리
+    b = auth_client.post("/api/pages", json={"title": "디자인", "kind": "folder"}).get_json()["page"]
     note = auth_client.post("/api/pages", json={"title": "회의록", "parent_id": a["id"]}).get_json()["page"]
     assert auth_client.post("/api/pages", json={"title": "회의록", "parent_id": a["id"]}).status_code == 409
     assert auth_client.post("/api/pages", json={"title": "회의록", "parent_id": b["id"]}).status_code == 201  # 다른 폴더는 됨
@@ -226,7 +224,7 @@ def test_duplicate_names_in_same_folder(auth_client):
     assert auth_client.post("/api/pages", json={}).status_code == 201
 
     other = auth_client.post("/api/pages", json={"title": "메모", "parent_id": a["id"]}).get_json()["page"]
-    assert auth_client.patch(f"/api/pages/{other['id']}", json={"title": "회의록"}).status_code == 409  # 이름 바꾸기
+    assert auth_client.patch(f"/api/pages/{other['id']}", json={"title": "회의록", "kind": "folder"}).status_code == 409  # 이름 바꾸기
     assert auth_client.patch(f"/api/pages/{note['id']}", json={"parent_id": b["id"]}).status_code == 409  # 옮기기
 
     # 휴지통에 있는 사이 같은 이름이 생기면 "(2)" 로 복원

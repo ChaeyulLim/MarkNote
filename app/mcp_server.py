@@ -18,15 +18,15 @@ ALLOW_EDIT = os.environ.get("MARKNOTE_ALLOW_EDIT") == "1"
 ALLOW_DECK_EDIT = os.environ.get("MARKNOTE_ALLOW_DECK_EDIT") == "1"
 ALLOW_DELETE = os.environ.get("MARKNOTE_ALLOW_DELETE") == "1"  # 휴지통으로 옮기기만 (영구 삭제 없음)
 
-flask_app = create_app()
+flask_app = create_app(accounts=False)
 
 server = MCPServer(
     name="marknote",
     instructions=(
-        "Tools for the user's MarkNote notes. Notes are plain Markdown files in folders: a top-level folder is a "
-        "project, folders can contain folders, and a folder's README.md is its description. Each result's `file` "
+        "Tools for the user's MarkNote notes. Notes are plain Markdown files in folders, like a file explorer: "
+        "folders and notes can sit at the top level or inside folders, and README.md is just an ordinary note. Each result's `file` "
         "is the path under the notes folder (e.g. 회사/회의록.md, 회사/2026-03/). Links between notes are normal "
-        "relative Markdown links ([회의록](../회의록.md)). When the user asks to check/review a project or folder, "
+        "relative Markdown links ([회의록](../회의록.md)). When the user asks to check/review a folder, "
         "read_page on that folder returns every note inside it. Note and presentation edits "
         "are applied immediately; the user can undo them from the chat or the page."
     ),
@@ -54,13 +54,13 @@ def find_page(path: str) -> dict:
     return _call(note_focus.find_page, path)
 
 
-@server.tool(description="List all folders and notes as a tree (id, title, kind, file, depth, status). README.md = folder description.")
+@server.tool(description="List all folders and notes as a tree (id, title, kind, file, depth, status).")
 def list_pages() -> dict:
     return _call(note_tools.list_pages)
 
 
 @server.tool(description="Read a note (full Markdown), or a folder: every note inside it including sub-folders "
-             "(README.md = folder description; very long folders list the rest in more_notes).")
+             "(very long folders list the rest in more_notes).")
 def read_page(page_id: int) -> dict:
     return _call(note_tools.read_page, page_id)
 
@@ -79,9 +79,8 @@ if ALLOW_EDIT:
 
     @server.tool(
         description=(
-            "Create a new note (a .md file) now inside the folder parent_id, or a folder with folder=true "
-            "(empty markdown). Notes live only inside folders; a top-level folder is a project. "
-            "A folder's description is its README.md note. Names must be unique within the same folder. "
+            "Create a new note (a .md file) now inside the folder parent_id (omit it for the top level), "
+            "or a folder with folder=true (empty markdown). Names must be unique within the same folder. "
             "The user can undo it (moves it to trash)."
         )
     )

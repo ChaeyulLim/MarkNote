@@ -3,6 +3,9 @@
   const data = JSON.parse(document.getElementById("page-data").textContent);
   const pageId = data.page.id;
   const editable = data.page.status !== "trashed";
+  // 내 PC 폴더 노트(local.js): 같은 편집기, 저장만 서버 대신 브라우저가 PC 파일에 (window.pageApi)
+  const local = Boolean(data.page.local);
+  const api = window.pageApi || window.api;
 
   const container = document.getElementById("blocks");
   const addArea = document.getElementById("add-block");
@@ -16,13 +19,17 @@
   const blocks = new Map(); // id -> {id, content, html}
   let editing = null; // {id, el, ta}
 
-  // 모든 서버 작업을 순서대로 실행 (저장 → 새 블록 생성 등이 꼬이지 않게)
+  // 모든 서버 작업을 순서대로 실행 (저장 → 새 블록 생성 등이 꼬이지 않게).
+  // 작업이 끝나면 페이지 내용이 바뀌었는지 보고 되돌리기 기록을 남긴다 (record: false = 기록 안 함 — 입력 중 자동 저장 등)
   let queue = Promise.resolve();
-  function enqueue(task) {
-    queue = queue.then(task).catch((err) => {
-      console.error(err);
-      alert(err.message);
-    });
+  function enqueue(task, { record = true } = {}) {
+    queue = queue
+      .then(task)
+      .then(() => record && recordHistory())
+      .catch((err) => {
+        console.error(err);
+        alert(err.message);
+      });
     return queue;
   }
   window.flushEditor = () => {
@@ -51,7 +58,7 @@
       saved.content = res.blocks[0].content;
       saved.html = res.blocks[0].html;
       saved.unsplit = true; // 편집을 마칠 때 빈 줄 기준 블록 나누기를 다시 해야 함
-    });
+    }, { record: false });
   }
 
   // AI 도우미가 질문 전에 부르는 저장: 편집을 끝내지 않고 지금 내용만 서버에 반영
@@ -71,7 +78,7 @@
     const sel = window.getSelection();
     if (!sel.rangeCount || !container.contains(sel.anchorNode)) return; // 채팅창 등 다른 곳 선택은 무시
     noteSelection(window.selectionWithoutSecrets(sel));
-  });
+  }, { signal: window.pageSignal() });
   window.getEditorLocation = () => ({
     view: "page",
     page_id: pageId,
@@ -172,6 +179,7 @@
     const el = elFor(id);
     if (!el) return;
     const b = blocks.get(id);
+    clearSelection();
     const ta = document.createElement("textarea");
     ta.className = "block-editor";
     ta.rows = 1;
@@ -258,7 +266,9 @@
 
     if (e.key === "Escape" || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s")) {
       e.preventDefault();
+      const id = editing.id;
       ta.blur();
+      if (e.key === "Escape") enqueue(async () => elFor(id) && selectBlocks([id]), { record: false });
     } else if (e.key === "Tab") {
       e.preventDefault();
       indentLine(ta, e.shiftKey);
@@ -542,8 +552,15 @@
       return;
     }
     const el = e.target.closest(".block");
+    if (el && e.target.closest(".block-handle")) {
+      enqueue(async () => {
+        await commit();
+        if (elFor(idOf(el))) clickSelect(idOf(el), e);
+      }, { record: false });
+      return;
+    }
     if (!el || el.classList.contains("editing")) return;
-    if (e.target.closest("a, input, button, iframe, .block-handle, .video-embed")) return;
+    if (e.target.closest("a, input, button, iframe, .video-embed")) return;
     if (window.getSelection().toString()) return; // 텍스트 선택(복사) 중에는 편집 진입 안 함
     const id = idOf(el);
     enqueue(async () => {
@@ -619,11 +636,11 @@
     if (!editable || !hasFiles(e)) return;
     e.preventDefault();
     // .md / .zip 은 이 노트가 있는 폴더로 가져오기
-    const docs = [...e.dataTransfer.files].filter(window.isImportable);
+    const docs = local ? [] : [...e.dataTransfer.files].filter(window.isImportable);
     if (docs.length) {
       enqueue(async () => {
         await commit();
-        if (await window.importFiles(docs, pageId)) location.reload();
+        if (await window.importFiles(docs, pageId)) window.reloadPage();
       });
       return;
     }
@@ -768,10 +785,7 @@
   sourceText.addEventListener("input", () => autosize(sourceText));
   document.getElementById("source-cancel").addEventListener("click", () => showSource(false));
   document.getElementById("source-save").addEventListener("click", () => {
-    enqueue(async () => {
-      await writeApi("PUT", `/api/pages/${pageId}/source`, { markdown: sourceText.value });
-      location.reload();
-    });
+    setSource(sourceText.value).then(() => showSource(false));
   });
 
   // ---------- AI 도우미 답변을 페이지 끝에 추가 ----------
@@ -789,6 +803,170 @@
         .catch(reject);
     });
   };
+
+  // ---------- 되돌리기 기록 (Ctrl+Z / Ctrl+Y 는 app.js) ----------
+  // 페이지 전체 마크다운을 작업 전·후로 기억해 두고, 되돌리기 = 그 내용으로 원문 저장 후 블록 다시 불러오기
+  let lastShot = "";
+  function snapshot() {
+    return [...container.children].map((el) => blocks.get(idOf(el))?.content || "").filter((c) => c.trim()).join("\n\n");
+  }
+  function recordHistory() {
+    const now = snapshot();
+    if (now === lastShot) return;
+    const before = lastShot;
+    lastShot = now;
+    window.undoManager.push({ page: true, label: "블록 편집", undo: () => restoreShot(before), redo: () => restoreShot(now) });
+  }
+  async function loadBlocks() {
+    const res = await api("GET", `/api/pages/${pageId}/blocks`);
+    blocks.clear();
+    selected.clear();
+    container.replaceChildren();
+    res.blocks.forEach((b) => {
+      store(b);
+      container.appendChild(createEl(b));
+    });
+    updateEmptyState();
+    return res;
+  }
+  function restoreShot(markdown) {
+    return enqueue(async () => {
+      await commit();
+      await writeApi("PUT", `/api/pages/${pageId}/source`, { markdown });
+      await loadBlocks();
+      lastShot = snapshot();
+    }, { record: false });
+  }
+  // 페이지 전체를 이 마크다운으로 (되돌리기 기록 남음)
+  function setSource(markdown) {
+    return enqueue(async () => {
+      await commit();
+      await writeApi("PUT", `/api/pages/${pageId}/source`, { markdown });
+      await loadBlocks();
+    });
+  }
+
+  // ---------- 블록 고르기: 손잡이 클릭 · Esc · Ctrl+A → Delete / 복사 / 잘라내기 / 붙여넣기 / ↑↓ ----------
+  const selected = new Set(); // 블록 번호
+  let anchorId = null; // Shift 범위의 시작
+  const orderedIds = () => [...container.children].map(idOf);
+  function paintSelection() {
+    container.querySelectorAll(".block").forEach((el) => el.classList.toggle("selected", selected.has(idOf(el))));
+  }
+  function selectBlocks(ids, anchor = ids[0]) {
+    selected.clear();
+    ids.forEach((id) => selected.add(id));
+    anchorId = anchor ?? null;
+    paintSelection();
+    if (ids.length) {
+      window.getSelection().removeAllRanges();
+      document.activeElement?.blur?.();
+      elFor(ids[ids.length - 1])?.scrollIntoView({ block: "nearest" });
+    }
+  }
+  function clearSelection() {
+    if (!selected.size) return;
+    selected.clear();
+    paintSelection();
+  }
+  function clickSelect(id, e) {
+    const ids = orderedIds();
+    if (e.shiftKey && anchorId != null && ids.includes(anchorId)) {
+      const [a, b] = [ids.indexOf(anchorId), ids.indexOf(id)].sort((x, y) => x - y);
+      selectBlocks(ids.slice(a, b + 1), anchorId);
+    } else if (e.ctrlKey || e.metaKey) {
+      const next = selected.has(id) ? [...selected].filter((x) => x !== id) : [...selected, id];
+      selectBlocks(ids.filter((x) => next.includes(x)), id);
+    } else {
+      selectBlocks([id]);
+    }
+  }
+  const selectedMarkdown = () => orderedIds().filter((id) => selected.has(id)).map((id) => blocks.get(id).content).join("\n\n");
+  function deleteSelected() {
+    const keep = orderedIds().filter((id) => !selected.has(id)).map((id) => blocks.get(id).content);
+    const count = selected.size;
+    clearSelection();
+    return setSource(keep.join("\n\n")).then(() => window.toast(`블록 ${count}개를 지웠습니다`, { label: "되돌리기", action: () => window.undoManager.undo() }));
+  }
+  function pasteAfterSelection(text) {
+    const ids = orderedIds();
+    const last = Math.max(...ids.map((id, i) => (selected.has(id) ? i : -1)));
+    const contents = ids.map((id) => blocks.get(id).content);
+    contents.splice(last + 1, 0, text.replace(/\r\n/g, "\n").trim());
+    clearSelection();
+    return setSource(contents.filter((c) => c.trim()).join("\n\n"));
+  }
+  function moveSelection(dir, extend) {
+    const ids = orderedIds();
+    const idx = ids.map((id, i) => (selected.has(id) ? i : -1)).filter((i) => i >= 0);
+    const edge = dir < 0 ? Math.min(...idx) - 1 : Math.max(...idx) + 1;
+    if (edge < 0 || edge >= ids.length) return;
+    if (!extend) return selectBlocks([ids[edge]]);
+    const a = ids.indexOf(anchorId);
+    const [from, to] = [a, edge].sort((x, y) => x - y);
+    selectBlocks(ids.slice(from, to + 1), anchorId);
+  }
+  // 고른 블록째 위/아래로 (Ctrl+Shift+↑/↓) — 여러 개면 함께, 맨 끝에 닿은 쪽은 그대로
+  function moveSelected(dir) {
+    const els = [...container.children].filter((el) => selected.has(idOf(el)));
+    if (dir > 0) els.reverse();
+    let moved = false;
+    for (const el of els) {
+      const neighbor = dir < 0 ? el.previousElementSibling : el.nextElementSibling;
+      if (!neighbor || selected.has(idOf(neighbor))) continue;
+      if (dir < 0) el.after(neighbor);
+      else el.before(neighbor);
+      moved = true;
+    }
+    if (!moved) return;
+    els[0].scrollIntoView({ block: "nearest" });
+    const order = [...container.children].map(idOf);
+    enqueue(() => writeApi("POST", `/api/pages/${pageId}/blocks/reorder`, { order }));
+  }
+  window.pageSelectAll = () => {
+    if (!editable || editing || !sourceEditor.hidden || !container.children.length) return false;
+    selectBlocks(orderedIds());
+    return true;
+  };
+  const signal = window.pageSignal();
+  const outsideKeys = (e) =>
+    !editable || editing || !sourceEditor.hidden || !selected.size ||
+    e.target.closest?.("input, textarea, select, [contenteditable='true'], .sidebar, .chat-panel, .ui-modal");
+  document.addEventListener("keydown", (e) => {
+    if (e.defaultPrevented || e.isComposing || e.keyCode === 229 || outsideKeys(e)) return;
+    const mod = e.ctrlKey || e.metaKey;
+    if ((e.key === "Delete" || e.key === "Backspace") && !mod) {
+      e.preventDefault();
+      deleteSelected();
+    } else if (mod && !e.shiftKey && (window.keyIs(e, "c") || window.keyIs(e, "x"))) {
+      if (window.getSelection().toString()) return; // 글자를 드래그해 골랐으면 그 글자 복사
+      e.preventDefault();
+      const cut = window.keyIs(e, "x");
+      window.copyToClipboard(selectedMarkdown()).then(() => (cut ? deleteSelected() : window.toast(`블록 ${selected.size}개를 복사했습니다`)), (err) => alert(err.message));
+    } else if ((e.key === "ArrowUp" || e.key === "ArrowDown") && mod && e.shiftKey) {
+      e.preventDefault();
+      moveSelected(e.key === "ArrowUp" ? -1 : 1);
+    } else if ((e.key === "ArrowUp" || e.key === "ArrowDown") && !mod) {
+      e.preventDefault();
+      moveSelection(e.key === "ArrowUp" ? -1 : 1, e.shiftKey);
+    } else if (e.key === "Enter" && !mod) {
+      e.preventDefault();
+      const id = orderedIds().find((x) => selected.has(x));
+      enqueue(async () => startEdit(id), { record: false });
+    } else if (e.key === "Escape") {
+      clearSelection();
+    }
+  }, { signal });
+  document.addEventListener("paste", (e) => {
+    if (outsideKeys(e)) return;
+    const text = e.clipboardData?.getData("text/plain");
+    if (!text?.trim()) return;
+    e.preventDefault();
+    pasteAfterSelection(text);
+  }, { signal });
+  document.addEventListener("mousedown", (e) => {
+    if (selected.size && !e.target.closest(".block-handle, .ctx-menu, .toast")) clearSelection();
+  }, { signal });
 
   // ---------- 우클릭 메뉴 ----------
   const K = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl";
@@ -906,14 +1084,14 @@
     }
     items.push(
       { label: "AI 도우미", icon: "sparkles", hint: `${K}+J`, action: () => document.querySelector("[data-chat-toggle]")?.click() },
-      { label: "Markdown 다운로드", icon: "download", action: () => (location.href = `/export/page/${pageId}.md`) },
+      ...(local ? [] : [{ label: "Markdown 다운로드", icon: "download", action: () => (location.href = `/export/page/${pageId}.md`) }]),
       { label: "단축키 보기", icon: "keyboard", hint: `${K}+/`, action: () => window.openShortcutHelp?.() }
     );
     return items;
   }
 
   const linkItems = (a) => [
-    { label: "열기", icon: "open", action: () => (location.href = a.getAttribute("href")) },
+    { label: "열기", icon: "open", action: () => window.go(a.getAttribute("href")) },
     { label: "새 탭에서 열기", icon: "external", action: () => window.open(a.href, "_blank") },
   ];
   const clickAction = (selector) => () => document.querySelector(selector)?.click();
@@ -927,6 +1105,10 @@
       items.push(
         { label: "원문 편집", icon: "code", action: clickAction("#toggle-source") }
       );
+    }
+    if (local) {
+      items.push("sep", { label: "휴지통으로 (연결만 끊기)", icon: "trash", danger: true, action: clickAction("[data-local-trash]") });
+      return items;
     }
     items.push(
       { label: "페이지 링크 복사", icon: "link", action: () => window.copyText(location.origin + location.pathname) },
@@ -973,7 +1155,7 @@
     ];
   }
 
-  window.contextMenuProviders?.push((e) => {
+  const menuProvider = (e) => {
     if (!e.target.closest(".content")) return null;
     const el = e.target.closest("#blocks .block");
     if (el) return el.classList.contains("editing") ? null : blockMenu(e, el);
@@ -982,7 +1164,9 @@
     if (e.target.closest(".sibling-nav")) return siblingMenu(e);
     if (e.target.closest("#source-editor")) return null; // 원문 편집 중에는 기본 메뉴
     return pageMenu(); // 본문 빈 곳 · 블록 추가 영역 · 여백
-  });
+  };
+  window.contextMenuProviders?.push(menuProvider);
+  window.onPageLeave(() => window.contextMenuProviders.splice(window.contextMenuProviders.indexOf(menuProvider), 1));
 
   // ---------- AI 가 바로 고친 부분: 강조 + [되돌리기 | 확정] ----------
   // 되돌리기 = 버튼 또는 Ctrl+Z (블록 편집 중이 아닐 때), 확정 = 버튼 또는 Ctrl+S.
@@ -1031,7 +1215,7 @@
       res = await api("POST", `/api/ai/note-edits/${edit.id}/undo`, { force: true });
     }
     announce(res.edit);
-    if (res.edit.kind === "create") location.href = "/";
+    if (res.edit.kind === "create") window.go("/");
     else await window.editorReload(); // 다시 불러오면서 강조도 새로 받음
   }
 
@@ -1069,15 +1253,16 @@
         // 블록 편집 중이면 그 블록 저장(기존 동작)도 함께 일어남
         if (!editing) e.preventDefault();
         confirmAiEdits().catch((err) => alert(err.message));
-      } else if (key === "z" && !e.shiftKey) {
-        const t = e.target;
-        if (editing || t.closest?.("input, textarea, [contenteditable]")) return; // 글자 입력 중엔 일반 실행 취소
-        e.preventDefault();
-        undoAiEdit().catch((err) => alert(err.message));
       }
     },
-    true
+    { capture: true, signal: window.pageSignal() }
   );
+  // Ctrl+Z (app.js): AI 가 고친 부분이 강조돼 있으면 그 수정부터 되돌린다
+  window.pageAiUndo = () => {
+    if (!aiShown()) return false;
+    undoAiEdit().catch((err) => alert(err.message));
+    return true;
+  };
   window.refreshAiEdits = () => loadAiEdits().catch(console.error);
 
   // ---------- AI 수정 제안이 이 페이지에 적용되면 다시 불러오기 ----------
@@ -1086,14 +1271,9 @@
       queue = queue
         .then(async () => {
           await commit();
-          const res = await api("GET", `/api/pages/${pageId}/blocks`);
-          blocks.clear();
-          container.replaceChildren();
-          res.blocks.forEach((b) => {
-            store(b);
-            container.appendChild(createEl(b));
-          });
-          updateEmptyState();
+          const res = await loadBlocks();
+          lastShot = snapshot(); // 바깥(AI 등)에서 바뀐 내용 — 그 전 기록으로 되돌리면 AI 수정을 덮으므로 새로 시작
+          window.undoManager.dropPage();
           data.page = res.page;
           titleInput.value = res.page.title;
           savedTitle = res.page.title;
@@ -1111,6 +1291,7 @@
     container.appendChild(createEl(b));
   }
   updateEmptyState();
+  lastShot = snapshot();
   if (editable && !data.page.title && !data.blocks.length) titleInput.focus();
   loadAiEdits().catch(console.error);
 })();

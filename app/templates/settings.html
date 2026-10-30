@@ -67,7 +67,7 @@
 
   <section class="settings-section">
     <h2 class="heading-with-icon">{{ icon('key') }}<span>로그인</span></h2>
-    <p class="muted settings-note">공용 PC 등에 로그인을 남겨 두었다면 모든 기기(이 기기 포함)의 로그인을 끊습니다. 비밀번호 변경은 서버에서 <code>flask --app run set-login</code>.</p>
+    <p class="muted settings-note">{% if current_user %}<strong>{{ current_user['username'] }}</strong> 계정{% if current_user['is_admin'] %} (관리자){% endif %}. {% endif %}공용 PC 등에 로그인을 남겨 두었다면 이 계정의 모든 기기(이 기기 포함) 로그인을 끊습니다. 비밀번호 변경·계정 추가는 서버에서 <code>flask --app run set-password &lt;아이디&gt;</code>, <code>flask --app run add-user &lt;아이디&gt;</code>.</p>
     <form method="post" action="{{ url_for('auth.logout_all') }}" onsubmit="return confirm('모든 기기에서 로그아웃할까요? 이 기기도 다시 로그인해야 합니다.')">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button type="submit" class="btn-danger">모든 기기에서 로그아웃</button>

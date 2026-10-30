@@ -2,12 +2,13 @@ from contextlib import contextmanager
 from datetime import datetime
 from io import BytesIO
 
-from flask import Blueprint, abort, current_app, jsonify, render_template, request, url_for
+from flask import Blueprint, abort, jsonify, render_template, request, url_for
 from PIL import Image
 
 from ..services import decks as deck_service
 from ..services.attachments import ImageError, save_image
 from ..services.deck_ops import OpError, apply_ops
+from ..services import userdata
 
 bp = Blueprint("decks", __name__)
 
@@ -114,7 +115,7 @@ def upload_image(deck_id):
         abort(400, description="파일이 없습니다.")
     data = file.read()
     try:
-        file_id = save_image(data, file.filename, current_app.config["UPLOAD_FOLDER"])
+        file_id = save_image(data, file.filename, userdata.path("UPLOAD_FOLDER"))
     except ImageError as err:
         abort(400, description=str(err))
     with Image.open(BytesIO(data)) as img:

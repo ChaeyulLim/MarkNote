@@ -1,4 +1,4 @@
-"""페이지 트리 — 폴더(맨 위 폴더 = 프로젝트)·노트(.md) 다루기. 실제 파일 읽기·쓰기는 store.py (docs/storage.md)."""
+"""페이지 트리 — 폴더·노트(.md) 다루기 (VS Code 탐색기처럼 맨 위에도 둘 다 놓인다). 실제 파일 읽기·쓰기는 store.py (docs/storage.md)."""
 
 import os
 import re
@@ -9,7 +9,6 @@ from . import note_links, store
 from .markdown_renderer import join_markdown, render_block
 from .store import Block, Page, StoreError, safe_name
 
-INBOX_TITLE = "분류 안 됨"  # 프로젝트 밖에 놓일 노트(따로 가져온 .md, 부모가 없어진 채 복원한 노트)를 모으는 프로젝트
 FILES_URL_RE = re.compile(r"/files/([0-9a-f]{32})")
 
 __all__ = ["Block", "Page", "StoreError", "safe_name"]
@@ -54,6 +53,19 @@ def active_tree() -> list[dict]:
     return build(None)
 
 
+def tree_json() -> list[dict]:
+    """탐색기용 활성 트리 (JSON): 폴더 먼저, 그다음 정한 순서."""
+
+    def row(node):
+        p = node["page"]
+        item = {"id": p.id, "kind": p.kind, "name": p.display_title, "path": file_path(p), "abs": abs_file_path(p), "url": p.url}
+        if is_folder(p):
+            item["children"] = [row(c) for c in node["children"]]
+        return item
+
+    return [row(n) for n in active_tree()]
+
+
 def descendants(page: Page) -> list[Page]:
     return store.descendants(page)
 
@@ -90,11 +102,6 @@ def is_folder(page: Page) -> bool:
     return page.kind == "folder"
 
 
-def is_project(page: Page) -> bool:
-    """맨 위 폴더."""
-    return is_folder(page) and page.parent_id is None
-
-
 def file_path(page: Page) -> str:
     """화면에 보여 주는 파일 위치 (notes 폴더 기준): 폴더 "회사/", 노트 "회사/회의록.md"."""
     return page.file
@@ -105,18 +112,11 @@ def abs_file_path(page: Page) -> str:
     return os.path.normpath(os.path.join(os.path.abspath(store.root()), *page.path.split("/")))
 
 
-def inbox() -> Page:
-    """"분류 안 됨" 프로젝트 (없으면 만듦)."""
-    found = name_conflict(None, INBOX_TITLE, kind="folder")
-    return found if found is not None else store.create(None, INBOX_TITLE)
-
-
 def create_page(parent: Page | None, title: str = "", markdown: str = "", unique: bool = False,
                 position: int | None = None, kind: str = "note") -> Page:
-    """새 폴더 또는 노트 (parent 가 없으면 프로젝트 = 맨 위 폴더). 이름이 겹치면 NameConflict (unique=True 면 "(2)")."""
+    """새 폴더 또는 노트 (parent 가 없으면 맨 위). 이름이 겹치면 NameConflict (unique=True 면 "(2)")."""
     title = (title or "").strip()[:200]
     parent_id = parent.id if parent else None
-    kind = "folder" if parent is None else kind
     if not title or unique:
         title = unique_title(parent_id, title or store.UNTITLED, kind=kind)
     else:
@@ -125,18 +125,11 @@ def create_page(parent: Page | None, title: str = "", markdown: str = "", unique
     return store.get(page.id)
 
 
-def readme(folder: Page) -> Page | None:
-    return store.readme_of(folder) if is_folder(folder) else None
-
-
 def folder_notes(folder: Page) -> list[Page]:
-    """폴더 안 노트 전부 (하위 폴더까지): 폴더마다 README → 노트 → 하위 폴더 순. "프로젝트 확인해줘" 용."""
+    """폴더 안 노트 전부 (하위 폴더까지): 폴더마다 노트 → 하위 폴더 순. "OO 폴더 확인해줘" 용."""
     result: list[Page] = []
 
     def walk(f: Page):
-        found = readme(f)
-        if found is not None:
-            result.append(found)
         kids = store.children(f.id, f.status)
         result.extend(k for k in kids if not is_folder(k))
         for k in kids:
@@ -146,12 +139,6 @@ def folder_notes(folder: Page) -> list[Page]:
     if is_folder(folder):
         walk(folder)
     return result
-
-
-def create_readme(folder: Page) -> Page:
-    """폴더 설명 README.md (없으면 만듦)."""
-    found = readme(folder)
-    return found if found is not None else store.create(folder, "README")
 
 
 def rename_page(page: Page, title: str) -> Page:
@@ -172,12 +159,9 @@ def rename_page(page: Page, title: str) -> Page:
 class NameConflict(ValueError):
     def __init__(self, existing: Page):
         self.existing = existing
-        if existing.parent_id:
-            what = "폴더" if is_folder(existing) else "노트"
-            message = f'"{existing.parent.display_title}" 안에 같은 이름의 {what} "{existing.display_title}"가 이미 있습니다.'
-        else:
-            message = f'같은 이름의 프로젝트 "{existing.display_title}"가 이미 있습니다.'
-        super().__init__(message)
+        what = "폴더" if is_folder(existing) else "노트"
+        where = f'"{existing.parent.display_title}" 안에' if existing.parent_id else "맨 위에"
+        super().__init__(f'{where} 같은 이름의 {what} "{existing.display_title}"가 이미 있습니다.')
 
 
 def _name_key(title: str | None) -> str:
@@ -190,21 +174,20 @@ def name_conflict(parent_id: int | None, title: str | None, exclude_id: int | No
     key = _name_key(title)
     if not key:
         return None
-    for p in store.children(parent_id, "active", readme=True):
+    for p in store.children(parent_id, "active"):
         if p.id != exclude_id and (kind is None or p.kind == kind) and store.name_key(p.name) == key:
             return p
     return None
 
 
 def check_name(parent_id: int | None, title: str | None, exclude_id: int | None = None, kind: str = "note") -> None:
-    existing = name_conflict(parent_id, title, exclude_id, kind="folder" if parent_id is None else kind)
+    existing = name_conflict(parent_id, title, exclude_id, kind=kind)
     if existing is not None:
         raise NameConflict(existing)
 
 
 def unique_title(parent_id: int | None, title: str, exclude_id: int | None = None, kind: str = "note") -> str:
     """겹치면 "제목 (2)", "제목 (3)" …"""
-    kind = "folder" if parent_id is None else kind
     title = safe_name(title)
     if name_conflict(parent_id, title, exclude_id, kind) is None:
         return title
@@ -237,27 +220,63 @@ def trash(page: Page) -> None:
 
 
 def restore(page: Page) -> Page:
-    """꺼내기. 원래 폴더가 살아 있으면 그 안으로. 없으면 폴더는 프로젝트(맨 위)로, 노트는 "분류 안 됨" 프로젝트로.
+    """꺼내기 — 원래 자리로. 원래 폴더가 없어졌으면 그 경로의 폴더를 다시 만든다 (VS Code 휴지통 복원처럼).
     휴지통에 있는 사이 같은 이름이 생겼으면 "(2)" 를 붙인다."""
     if page.status == "active":
         return page
     parent = page.parent
     if parent is None or parent.status != "active":
-        parent = None if is_folder(page) else inbox()
+        parent = ensure_folders(store.original_path(page).split("/")[:-1])
     title = unique_title(parent.id if parent else None, page.name, kind=page.kind)
     return store.restore(page, parent, title)
 
 
+def ensure_folders(names: list[str]) -> Page | None:
+    """맨 위부터 names 경로의 폴더 (없는 것은 만듦). 빈 목록이면 None (맨 위)."""
+    parent = None
+    for name in names:
+        found = name_conflict(parent.id if parent else None, name, kind="folder")
+        parent = found if found is not None else store.create(parent, name, kind="folder")
+    return parent
+
+
 def delete_permanently(page: Page, upload_folder: str) -> None:
-    """영구 삭제 — 노트 본문에 들어 있던 그림 파일도 지운다."""
-    for p in [page, *descendants(page)]:
-        for file_id in FILES_URL_RE.findall(p.source):
+    """영구 삭제 — 노트 본문에 들어 있던 그림 파일도 지운다. 다른 노트(복사본 등)가 아직 쓰는 그림은 남긴다."""
+    gone = [page, *descendants(page)]
+    gone_ids = {p.id for p in gone}
+    still_used = {f for p in store.all_pages() if p.id not in gone_ids for f in FILES_URL_RE.findall(p.source)}
+    for p in gone:
+        for file_id in set(FILES_URL_RE.findall(p.source)) - still_used:
             for name in _upload_names(upload_folder, file_id):
                 try:
                     os.remove(os.path.join(upload_folder, name))
                 except OSError:
                     current_app.logger.warning("첨부 파일 삭제 실패: %s", name)
     store.delete(page)
+
+
+def copy_page(page: Page, parent: Page | None) -> Page:
+    """복사본 만들기 (폴더면 안의 것까지) — parent 폴더 안에 (None 이면 맨 위). 이름이 겹치면 "(2)".
+    복사본 안의 링크: 함께 복사된 노트끼리는 복사본을, 그 밖은 원래 대상을 가리키도록 상대 경로를 다시 쓴다.
+    그림(/files/…)은 원본과 같은 파일을 함께 쓴다."""
+    if parent is not None and is_self_or_descendant(parent, page):
+        raise StoreError("자기 자신이나 그 안의 폴더에는 붙여 넣을 수 없습니다.")
+    pairs: list[tuple[Page, Page]] = []
+
+    def copy(src: Page, dest: Page | None, title: str) -> Page:
+        made = store.create(dest, title, kind=src.kind)
+        pairs.append((src, made))
+        for child in store.children(src.id, status="active"):
+            copy(child, made, child.name)
+        return made
+
+    top = copy(page, parent, unique_title(parent.id if parent else None, page.name, kind=page.kind))
+    moved = {src.path: made.path for src, made in pairs}
+    for src, made in pairs:
+        if src.kind == "note" and src.source:
+            body = note_links.rewrite(src.source, src.path, made.path, lambda target: moved.get(target.rstrip("/"), target.rstrip("/")) + target[len(target.rstrip("/")):])
+            store.replace_source(store.get(made.id), body)
+    return store.get(top.id)
 
 
 def _upload_names(upload_folder: str, file_id: str) -> list[str]:

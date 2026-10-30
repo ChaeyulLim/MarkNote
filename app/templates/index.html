@@ -4,9 +4,12 @@
 {% block content %}
 <div class="home">
   <h1 class="heading-with-icon">{{ logo('lg') }}<span>MarkNote</span></h1>
-  <button type="button" class="btn-primary" data-action="new-page">{{ icon('folder-plus') }}<span>새 프로젝트</span></button>
+  <div class="home-actions">
+    <button type="button" class="btn-primary" data-explorer-cmd="new-file">{{ icon('file-plus') }}<span>새 파일</span></button>
+    <button type="button" class="btn-ghost" data-explorer-cmd="new-folder">{{ icon('folder-plus') }}<span>새 폴더</span></button>
+  </div>
 
-  <h2>최근 수정한 페이지</h2>
+  <h2>최근 수정한 노트</h2>
   <ul class="page-list">
     {% for p in recent %}
     <li>
@@ -14,7 +17,7 @@
       <span class="muted">{{ p.updated_at.strftime('%Y-%m-%d %H:%M') }}</span>
     </li>
     {% else %}
-    <li class="muted">아직 페이지가 없습니다. 새 프로젝트를 만들고 그 안에 노트를 추가해 보세요.</li>
+    <li class="muted">아직 노트가 없습니다. 왼쪽 탐색기에서 새 파일을 만들어 보세요.</li>
     {% endfor %}
   </ul>
 </div>

@@ -99,7 +99,7 @@ if "-p" in args:
             from app import create_app
             from app.services import note_edits, note_tools
 
-            with create_app().app_context():
+            with create_app(accounts=False).app_context():
                 page_id = int(page_match.group(1))
                 base = note_tools.read_page(page_id)["markdown"]
                 note_edits.edit_page(server["env"]["MARKNOTE_RUN_ID"], page_id, base + "\n\n- [ ] AI가 추가한 줄", "할 일 한 줄 추가")
@@ -114,7 +114,7 @@ if "-p" in args:
             from app import create_app
             from app.services import deck_tools
 
-            with create_app().app_context():
+            with create_app(accounts=False).app_context():
                 deck_tools.edit_deck(
                     server["env"]["MARKNOTE_RUN_ID"],
                     int(deck_match.group(1)),

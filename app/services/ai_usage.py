@@ -13,10 +13,9 @@ import threading
 import time
 from datetime import date
 
-from flask import current_app
-
 from . import filestore
 from .settings import get_value, set_values
+from . import userdata
 
 MODEL_CHOICES = [  # (설정 값, 화면 이름) — 값은 claude --model 별칭
     ("", "기본 모델"),
@@ -100,7 +99,7 @@ def summarize(model: str | None, last_context: int, model_usage: dict | None) ->
 def record(summary: dict) -> None:
     """오늘 사용량에 더하고, 마지막으로 쓴 모델을 기억한다."""
     today = date.today().isoformat()
-    with filestore.update_json(current_app.config["USAGE_FILE"], {}) as days:  # instance/ai-usage.json {날짜: {…}}
+    with filestore.update_json(userdata.path("USAGE_FILE"), {}) as days:  # instance/ai-usage.json {날짜: {…}}
         row = days.setdefault(today, {"requests": 0, "input_tokens": 0, "output_tokens": 0})
         row["requests"] += 1
         row["input_tokens"] += summary["input_tokens"]
@@ -213,7 +212,7 @@ def limits() -> list[dict]:
 
 
 def overview(prefs: dict) -> dict:
-    today = filestore.read_json(current_app.config["USAGE_FILE"], {}).get(date.today().isoformat(), {})
+    today = filestore.read_json(userdata.path("USAGE_FILE"), {}).get(date.today().isoformat(), {})
     last = get_value(LAST_MODEL_KEY)
     return {
         "model": prefs["ai_model"],

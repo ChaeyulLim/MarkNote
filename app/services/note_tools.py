@@ -75,7 +75,7 @@ def list_pages() -> dict:
     rows: list[dict] = []
 
     def walk(parent_id, depth):
-        for p in store.children(parent_id, readme=True):
+        for p in store.children(parent_id):
             if p.status == "trashed" or len(rows) >= MAX_LIST_PAGES:
                 continue
             rows.append({"id": p.id, "title": p.display_title, "kind": p.kind, "file": tree.file_path(p),
@@ -102,7 +102,6 @@ def read_page(page_id: int) -> dict:
         source = secret_text.redact(tree.page_source(page))
         return {**info, "markdown": source[:MAX_READ_CHARS], "truncated": len(source) > MAX_READ_CHARS}
     kids = [c for c in store.children(page.id) if c.status != "trashed"]
-    readme = tree.readme(page)
     notes, more, used = [], [], 0
     for note in tree.folder_notes(page):
         row = {"id": note.id, "title": note.display_title, "file": tree.file_path(note)}
@@ -114,11 +113,10 @@ def read_page(page_id: int) -> dict:
         notes.append({**row, "markdown": source})
     return {
         **info,
-        "readme_id": readme.id if readme else None,
         "sub_pages": [{"id": c.id, "title": c.display_title, "kind": c.kind, "file": tree.file_path(c)} for c in kids],
         "notes": notes,
         "more_notes": more,
-        "hint": "폴더 안 노트 전부입니다 (README.md = 폴더 설명)." + (
+        "hint": "폴더 안 노트 전부입니다." + (
             " 길어서 more_notes 는 내용을 빼고 목록만 — 필요한 것을 read_page 로 하나씩 읽으세요." if more else ""),
     }
 
